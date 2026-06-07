@@ -57,7 +57,7 @@ function init() {
   scene.add(floor);
 
   // ✅ Achsen (Math-Buch Standard)
-  createMathTextbookAxes(5);
+  createMathTextbookAxes(10);
 
   // ✅ Controller
   const controllers = initControllers(renderer, rig);
