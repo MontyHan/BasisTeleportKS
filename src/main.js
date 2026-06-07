@@ -90,17 +90,17 @@ function init() {
 
 /**
  * Creates custom axes for math textbook standard:
- * X-axis (red) → right (positive +X in Three.js)
- * Y-axis (green) → up (positive +Y in Three.js)
- * Z-axis (blue) → forwards (positive -Z in Three.js)
+ * X-axis (red) → forward/backward (positive towards viewer +Z, negative away -Z)
+ * Y-axis (green) → left/right (positive right +X, negative left -X)
+ * Z-axis (blue) → up/down (positive up +Y, negative down -Y)
  */
 function createMathTextbookAxes(length) {
   const axesGroup = new THREE.Group();
   
-  // X-axis: right (red) - maps to +X in Three.js
+  // X-axis: forward towards viewer (red) - maps to +Z in Three.js
   const xGeometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(length, 0, 0)
+    new THREE.Vector3(0, 0, length)
   ]);
   const xMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
   const xLine = new THREE.Line(xGeometry, xMaterial);
@@ -108,7 +108,7 @@ function createMathTextbookAxes(length) {
   
   // Add arrow for X
   const xArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 1),
     new THREE.Vector3(0, 0, 0),
     length,
     0xff0000,
@@ -117,10 +117,10 @@ function createMathTextbookAxes(length) {
   );
   axesGroup.add(xArrow);
 
-  // Y-axis: up (green) - maps to +Y in Three.js
+  // Y-axis: right (green) - maps to +X in Three.js
   const yGeometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, length, 0)
+    new THREE.Vector3(length, 0, 0)
   ]);
   const yMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
   const yLine = new THREE.Line(yGeometry, yMaterial);
@@ -128,7 +128,7 @@ function createMathTextbookAxes(length) {
   
   // Add arrow for Y
   const yArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(1, 0, 0),
     new THREE.Vector3(0, 0, 0),
     length,
     0x00ff00,
@@ -137,10 +137,10 @@ function createMathTextbookAxes(length) {
   );
   axesGroup.add(yArrow);
 
-  // Z-axis: forwards (blue) - maps to -Z in Three.js
+  // Z-axis: up (blue) - maps to +Y in Three.js
   const zGeometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 0, -length)
+    new THREE.Vector3(0, length, 0)
   ]);
   const zMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
   const zLine = new THREE.Line(zGeometry, zMaterial);
@@ -148,7 +148,7 @@ function createMathTextbookAxes(length) {
   
   // Add arrow for Z
   const zArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 1, 0),
     new THREE.Vector3(0, 0, 0),
     length,
     0x0000ff,
@@ -161,9 +161,9 @@ function createMathTextbookAxes(length) {
   const labelGroup = new THREE.Group();
   labelGroup.position.copy(axesGroup.position);
   
-  addAxisLabel('X', new THREE.Vector3(length + 0.5, 0, 0), labelGroup);
-  addAxisLabel('Y', new THREE.Vector3(0, length + 0.5, 0), labelGroup);
-  addAxisLabel('Z', new THREE.Vector3(0, 0, -length - 0.5), labelGroup);
+  addAxisLabel('X', new THREE.Vector3(0, 0, length + 0.5), labelGroup);
+  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0, 0), labelGroup);
+  addAxisLabel('Z', new THREE.Vector3(0, length + 0.5, 0), labelGroup);
   
   axesGroup.add(labelGroup);
   scene.add(axesGroup);
