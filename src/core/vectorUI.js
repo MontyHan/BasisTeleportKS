@@ -68,6 +68,7 @@ export function setVectorFromComponents(x, y, z, opts = {}) {
 
   const start = new THREE.Vector3(0, 0, 0);
   // Convert math coordinates to Three.js: (x_math, y_math, z_math) → (y, z, x)
+  // x_math (towards viewer) maps to +Z, y_math (right) maps to +X, z_math (up) maps to +Y
   const end = new THREE.Vector3(y, z, x);
 
   createLine(vectorGroup, [start, end], opts.lineColor ?? 0x00ffcc);
