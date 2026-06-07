@@ -147,12 +147,24 @@ export function handleUISelection() {
   if (typeof cb === 'function') cb();
 }
 
-// ===== Fallback Point Creation =====
+// ===== Point Creation with Math Coordinate Conversion =====
 
+/**
+ * Creates a point at the specified math textbook coordinates
+ * Converts from math coordinates to Three.js coordinates:
+ * x = towards viewer (maps to +Z)
+ * y = right (maps to +X)
+ * z = up (maps to +Y)
+ */
 function createPoint(x, y, z) {
+  // Convert math coordinates (x, y, z) to Three.js coordinates (y, z, x)
+  const threeJsX = y;
+  const threeJsY = z;
+  const threeJsZ = x;
+
   const geo = new THREE.SphereGeometry(0.05, 16, 16);
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
   const point = new THREE.Mesh(geo, mat);
-  point.position.set(x, y, z);
+  point.position.set(threeJsX, threeJsY, threeJsZ);
   scene.add(point);
 }
