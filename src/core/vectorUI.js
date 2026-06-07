@@ -38,6 +38,12 @@ export function initVectorUI(s) {
   spriteRoot.add(labelSprites.vx, labelSprites.vy, labelSprites.vz);
 }
 
+/**
+ * Set vector from components (math textbook coordinate system)
+ * x = towards viewer (positive +Z in Three.js)
+ * y = right (positive +X in Three.js)
+ * z = up (positive +Y in Three.js)
+ */
 export function setVectorFromComponents(x, y, z, opts = {}) {
   if (!scene || !vectorGroup) return;
 
@@ -61,7 +67,8 @@ export function setVectorFromComponents(x, y, z, opts = {}) {
   }
 
   const start = new THREE.Vector3(0, 0, 0);
-  const end = new THREE.Vector3(x, y, z);
+  // Convert math coordinates to Three.js: (x_math, y_math, z_math) → (y, z, x)
+  const end = new THREE.Vector3(y, z, x);
 
   createLine(vectorGroup, [start, end], opts.lineColor ?? 0x00ffcc);
 
@@ -80,7 +87,7 @@ export function setVectorFromComponents(x, y, z, opts = {}) {
 }
 
 //
-// ✅ NEU: Ortsvektor pro Punkt
+// ✅ NEU: Ortsvektor pro Punkt (math textbook coordinate system)
 //
 export function addOrtsvektorForPoint(point, x, y, z, index) {
   if (!ortsvektorGroup) return;
@@ -88,7 +95,8 @@ export function addOrtsvektorForPoint(point, x, y, z, index) {
   const group = new THREE.Group();
 
   const start = new THREE.Vector3(0, 0, 0);
-  const end = new THREE.Vector3(x, y, z);
+  // Convert math coordinates to Three.js: (x_math, y_math, z_math) → (y, z, x)
+  const end = new THREE.Vector3(y, z, x);
 
   // Linie
   const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
@@ -112,7 +120,7 @@ export function addOrtsvektorForPoint(point, x, y, z, index) {
 
   // Label
   const sprite = makeTextSprite(`r${index} = (${x}/${y}/${z})`);
-  sprite.position.set(x + 0.25, y + 0.25, z);
+  sprite.position.set(end.x + 0.25, end.y + 0.25, end.z);
   group.add(sprite);
 
   // in globale Gruppe
