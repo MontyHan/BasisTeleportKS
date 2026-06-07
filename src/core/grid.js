@@ -15,11 +15,6 @@ export function initGrid(scene) {
     grid.position.y = 0;
     group.add(grid);
 
-    // === ACHSEN ===
-    createAxis(new THREE.Vector3(1,0,0), 0xff0000, "x");
-    createAxis(new THREE.Vector3(0,1,0), 0x00ff00, "y");
-    createAxis(new THREE.Vector3(0,0,1), 0x0000ff, "z");
-
     // === SKALIERUNG ZAHLEN ===
     for (let i = -10; i <= 10; i++) {
 
@@ -29,27 +24,6 @@ export function initGrid(scene) {
         createLabel(i.toString(), new THREE.Vector3(0, i, 0));
         createLabel(i.toString(), new THREE.Vector3(0, 0, i));
     }
-}
-
-
-// ===== ACHSEN MIT PFEIL =====
-function createAxis(dir, color, label) {
-
-    const length = 10;
-
-    const arrow = new THREE.ArrowHelper(
-        dir,
-        new THREE.Vector3(0,0,0),
-        length,
-        color,
-        0.5,
-        0.3
-    );
-
-    group.add(arrow);
-
-    // Label am Ende
-    createLabel(label, dir.clone().multiplyScalar(length + 1), color);
 }
 
 
