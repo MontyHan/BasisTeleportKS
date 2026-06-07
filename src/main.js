@@ -56,9 +56,8 @@ function init() {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // ✅ Achsen
-  const axes = new THREE.AxesHelper(5);
-  scene.add(axes);
+  // ✅ Achsen (Math-Buch Standard: X=towards viewer, Y=right, Z=up)
+  createMathTextbookAxes(5);
 
   // ✅ Controller
   const controllers = initControllers(renderer, rig);
@@ -87,6 +86,115 @@ function init() {
 
   // ✅ Vektor-Bildschirm / Vektor-UI
   initVectorUI(scene);
+}
+
+/**
+ * Creates custom axes for math textbook standard:
+ * X-axis (red) → towards viewer (positive +Z in Three.js)
+ * Y-axis (green) → right (positive +X in Three.js)
+ * Z-axis (blue) → up (positive +Y in Three.js)
+ */
+function createMathTextbookAxes(length) {
+  const axesGroup = new THREE.Group();
+  
+  // X-axis: towards viewer (red) - maps to +Z in Three.js
+  const xGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, length)
+  ]);
+  const xMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+  const xLine = new THREE.Line(xGeometry, xMaterial);
+  axesGroup.add(xLine);
+  
+  // Add arrow for X
+  const xArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(0, 0, 0),
+    length,
+    0xff0000,
+    length * 0.2,
+    length * 0.1
+  );
+  axesGroup.add(xArrow);
+
+  // Y-axis: right (green) - maps to X in Three.js
+  const yGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(length, 0, 0)
+  ]);
+  const yMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+  const yLine = new THREE.Line(yGeometry, yMaterial);
+  axesGroup.add(yLine);
+  
+  // Add arrow for Y
+  const yArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    length,
+    0x00ff00,
+    length * 0.2,
+    length * 0.1
+  );
+  axesGroup.add(yArrow);
+
+  // Z-axis: up (blue) - maps to Y in Three.js
+  const zGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, length, 0)
+  ]);
+  const zMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
+  const zLine = new THREE.Line(zGeometry, zMaterial);
+  axesGroup.add(zLine);
+  
+  // Add arrow for Z
+  const zArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 0),
+    length,
+    0x0000ff,
+    length * 0.2,
+    length * 0.1
+  );
+  axesGroup.add(zArrow);
+
+  // Add labels
+  const labelGroup = new THREE.Group();
+  labelGroup.position.copy(axesGroup.position);
+  
+  addAxisLabel('X', new THREE.Vector3(0, 0, length + 0.5), labelGroup);
+  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0, 0), labelGroup);
+  addAxisLabel('Z', new THREE.Vector3(0, length + 0.5, 0), labelGroup);
+  
+  axesGroup.add(labelGroup);
+  scene.add(axesGroup);
+}
+
+/**
+ * Helper function to add text labels to axes
+ */
+function addAxisLabel(text, position, group) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  canvas.width = 256;
+  canvas.height = 256;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.font = 'bold 100px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.copy(position);
+  sprite.scale.set(0.5, 0.5, 1);
+  
+  group.add(sprite);
 }
 
 function animate() {
