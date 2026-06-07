@@ -1,6 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-let scene, camera, rig, controller;
+let scene, camera, rig, leftController, rightController;
 
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -13,11 +13,12 @@ let panelRoot = null;
 
 let onCreatePoint = null;
 
-export function initInputUI(s, cam, r, ctrl, options = {}) {
+export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   scene = s;
   camera = cam;
   rig = r;
-  controller = ctrl;
+  leftController = lCtrl;
+  rightController = rCtrl;
 
   onCreatePoint = options.onCreatePoint ?? null;
 
@@ -125,15 +126,15 @@ function makeTextSprite(text) {
 // ===== Interaktion =====
 
 export function handleUISelection() {
-  if (!controller) return;
+  if (!rightController) return;
   if (!buttons.length) return;
 
-  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  tempMatrix.identity().extractRotation(rightController.matrixWorld);
 
   const origin = raycaster.ray.origin;
   const dir = raycaster.ray.direction;
 
-  origin.setFromMatrixPosition(controller.matrixWorld);
+  origin.setFromMatrixPosition(rightController.matrixWorld);
   dir.set(0, 0, -1).applyMatrix4(tempMatrix);
 
   raycaster.set(origin, dir);
