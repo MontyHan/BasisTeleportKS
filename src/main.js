@@ -63,7 +63,7 @@ function init() {
   const controllers = initControllers(renderer, rig);
 
   // ✅ UI an linken Controller hängen
-  initInputUI(scene, camera, rig, controllers.left, {
+  initInputUI(scene, camera, rig, controllers.left, controllers.right, {
     onCreatePoint: (x, y, z) => {
       // Punkt anzeigen
       createPoint(scene, x, y, z, 0xff0000, 0.05);
@@ -76,8 +76,8 @@ function init() {
     }
   });
 
-  // UI Interaktion
-  controllers.left.addEventListener('selectstart', () => {
+  // UI Interaktion - Right controller for button selection
+  controllers.right.addEventListener('selectstart', () => {
     handleUISelection();
   });
 
