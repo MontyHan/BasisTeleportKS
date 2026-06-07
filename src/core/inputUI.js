@@ -11,7 +11,7 @@ const textSprites = {};
 
 let panelRoot = null;
 
-let onCreatePoint = null; // Callback für main/vectorUI
+let onCreatePoint = null;
 
 export function initInputUI(s, cam, r, ctrl, options = {}) {
   scene = s;
@@ -35,7 +35,7 @@ function createPanel() {
 
   const createBtn = makeButton('CREATE', 0, -1.4, () => {
     if (onCreatePoint) onCreatePoint(values.x, values.y, values.z);
-    else createPoint(values.x, values.y, values.z); // Fallback
+    else createPoint(values.x, values.y, values.z);
   });
 
   panelRoot.add(createBtn);
@@ -44,18 +44,18 @@ function createPanel() {
 
 function createRow(parent, axis, y) {
   const text = makeTextSprite(`${axis}: 0`);
-  text.position.set(-0.6, y, 0);
+  text.position.set(-0.5, y, 0);
   parent.add(text);
 
   textSprites[axis] = text;
 
-  const plus = makeButton('+', 0.2, y, () => {
-    values[axis] += 1;
+  const minus = makeButton('-', 0.2, y, () => {
+    values[axis] -= 1;
     updateText();
   });
 
-  const minus = makeButton('-', 0.5, y, () => {
-    values[axis] -= 1;
+  const plus = makeButton('+', 0.45, y, () => {
+    values[axis] += 1;
     updateText();
   });
 
@@ -71,8 +71,8 @@ function updateText() {
     const old = textSprites[axis];
     if (old.parent) old.parent.remove(old);
 
-    textSprites[axis].material.map.dispose?.();
-    textSprites[axis].material.dispose?.();
+    textSprites[axis].material.map?.dispose();
+    textSprites[axis].material.dispose();
 
     textSprites[axis] = newSprite;
 
@@ -86,13 +86,12 @@ function makeButton(label, x, y, onClick) {
   const mesh = new THREE.Mesh(geo, mat);
 
   mesh.position.set(x, y, 0);
-
   mesh.userData.onClick = onClick;
   mesh.userData.label = label;
 
-  // optional: Label als Sprite oben drauf
   const spr = makeTextSprite(label);
   spr.position.set(0, 0, 0.06);
+  spr.scale.set(0.2, 0.2, 1);
   mesh.add(spr);
 
   return mesh;
@@ -109,17 +108,15 @@ function makeTextSprite(text) {
 
   ctx.fillStyle = 'rgba(255,255,255,1)';
   ctx.font = 'bold 56px Arial';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 20, canvas.height / 2);
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
   const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
   const sprite = new THREE.Sprite(mat);
-
-  // Größe so wählen, dass es lesbar ist
   sprite.scale.set(0.75, 0.35, 1);
 
   return sprite;
