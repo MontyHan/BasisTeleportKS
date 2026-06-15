@@ -10,8 +10,10 @@ const values = { x: 0, y: 0, z: 0 };
 const textSprites = {};
 
 let panelRoot = null;
-
 let onCreatePoint = null;
+let onToggleOrtsvektoren = null;
+let ortsvektorenVisible = false;
+let toggleBtn = null;
 
 export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   scene = s;
@@ -21,14 +23,17 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   rightController = rCtrl;
 
   onCreatePoint = options.onCreatePoint ?? null;
+  onToggleOrtsvektoren = options.onToggleOrtsvektoren ?? null;
 
   createPanel();
 }
 
 function createPanel() {
   panelRoot = new THREE.Group();
-  panelRoot.position.set(0, 1.5, -2);
-  scene.add(panelRoot);
+  // Panel am linken Controller befestigt: leicht nach oben und vor dem Controller
+  panelRoot.position.set(0, 0.1, -0.3);
+  panelRoot.rotation.x = -Math.PI / 8;
+  leftController.add(panelRoot);
 
   createRow(panelRoot, 'x', 0);
   createRow(panelRoot, 'y', -0.4);
@@ -36,11 +41,40 @@ function createPanel() {
 
   const createBtn = makeButton('CREATE', 0, -1.4, () => {
     if (onCreatePoint) onCreatePoint(values.x, values.y, values.z);
-    else createPoint(values.x, values.y, values.z);
   });
-
   panelRoot.add(createBtn);
   buttons.push(createBtn);
+
+  // Toggle-Button für Ortsvektoren
+  toggleBtn = makeWideButton('OV: AUS', 0, -1.9, () => {
+    ortsvektorenVisible = !ortsvektorenVisible;
+    if (onToggleOrtsvektoren) onToggleOrtsvektoren(ortsvektorenVisible);
+    updateToggleButtonLabel();
+  });
+  panelRoot.add(toggleBtn);
+  buttons.push(toggleBtn);
+}
+
+function updateToggleButtonLabel() {
+  if (!toggleBtn) return;
+
+  const label = ortsvektorenVisible ? 'OV: AN' : 'OV: AUS';
+  const color = ortsvektorenVisible ? 0x44aa44 : 0x4444ff;
+
+  toggleBtn.material.color.setHex(color);
+
+  const sprite = toggleBtn.children[0];
+  if (!sprite?.material?.map?.image) return;
+
+  const canvas = sprite.material.map.image;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.font = 'bold 56px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+  sprite.material.map.needsUpdate = true;
 }
 
 function createRow(parent, axis, y) {
@@ -98,6 +132,23 @@ function makeButton(label, x, y, onClick) {
   return mesh;
 }
 
+function makeWideButton(label, x, y, onClick) {
+  const geo = new THREE.BoxGeometry(0.4, 0.2, 0.05);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x4444ff });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  mesh.position.set(x, y, 0);
+  mesh.userData.onClick = onClick;
+  mesh.userData.label = label;
+
+  const spr = makeTextSprite(label);
+  spr.position.set(0, 0, 0.06);
+  spr.scale.set(0.4, 0.2, 1);
+  mesh.add(spr);
+
+  return mesh;
+}
+
 function makeTextSprite(text) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -146,26 +197,4 @@ export function handleUISelection() {
   const obj = intersects[0].object;
   const cb = obj?.userData?.onClick;
   if (typeof cb === 'function') cb();
-}
-
-// ===== Point Creation with Math Coordinate Conversion =====
-
-/**
- * Creates a point at the specified math textbook coordinates
- * Converts from math coordinates to Three.js coordinates:
- * x = towards viewer (maps to +Z)
- * y = right (maps to +X)
- * z = up (maps to +Y)
- */
-function createPoint(x, y, z) {
-  // Convert math coordinates (x, y, z) to Three.js coordinates (y, z, x)
-  const threeJsX = y;
-  const threeJsY = z;
-  const threeJsZ = x;
-
-  const geo = new THREE.SphereGeometry(0.05, 16, 16);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-  const point = new THREE.Mesh(geo, mat);
-  point.position.set(threeJsX, threeJsY, threeJsZ);
-  scene.add(point);
 }

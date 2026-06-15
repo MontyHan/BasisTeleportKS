@@ -5,11 +5,12 @@ import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
 
 import { initInputUI, handleUISelection } from './core/inputUI.js';
-import { initVectorUI, setVectorFromComponents } from './core/vectorUI.js';
+import { initVectorUI, setVectorFromComponents, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
 import { createPoint } from './core/geometryFactory.js';
 
 let scene, camera, renderer;
 let rig;
+let pointCounter = 0;
 
 init();
 animate();
@@ -65,14 +66,20 @@ function init() {
   // ✅ UI an linken Controller hängen
   initInputUI(scene, camera, rig, controllers.left, controllers.right, {
     onCreatePoint: (x, y, z) => {
-      // Punkt anzeigen
-      createPoint(scene, x, y, z, 0xff0000, 0.05);
+      // Koordinaten-Konvertierung Mathebuch → Three.js: (x,y,z) → (y, z, x)
+      const point = createPoint(scene, y, z, x, 0xff0000, 0.05);
 
-      // Vektor anzeigen (inkl. vx, vy, vz Labels)
+      // Ortsvektor für diesen Punkt
+      addOrtsvektorForPoint(point, x, y, z, pointCounter++);
+
+      // Aktuellen Vektor in der UI anzeigen
       setVectorFromComponents(x, y, z, {
         lineColor: 0x00ffcc,
         pointColor: 0x00ff00
       });
+    },
+    onToggleOrtsvektoren: (visible) => {
+      toggleOrtsvektoren(visible);
     }
   });
 

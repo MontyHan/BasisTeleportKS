@@ -19,6 +19,7 @@ export function initVectorUI(s) {
 
   // ✅ NEU
   ortsvektorGroup = new THREE.Group();
+  ortsvektorGroup.visible = false;
   scene.add(ortsvektorGroup);
 
   spriteRoot = new THREE.Group();
