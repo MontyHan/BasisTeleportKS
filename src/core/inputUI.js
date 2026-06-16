@@ -17,6 +17,7 @@ let helpVisible = false;
 let onCreatePoint = null;
 let onGeradeMode = null;
 let onVektorMode = null;
+let onParamMode = null;
 let onDeleteMode = null;
 let onToggleOrtsvektoren = null;
 let onToggleRichtungsvektor = null;
@@ -27,8 +28,8 @@ let onToggleBodenKS = null;
 let ortsvektorenVisible = false;
 let richtungsvektorVisible = true;  // RV startet sichtbar
 let geradengleichungVisible = false;
-let glVisible = true;   // Geradenlinie startet sichtbar
-let ksVisible = false;  // BodenKS startet versteckt
+let glVisible = true;
+let ksVisible = false;
 
 let ovToggleBtn = null;
 let rvToggleBtn = null;
@@ -46,6 +47,7 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   onCreatePoint             = options.onCreatePoint             ?? null;
   onGeradeMode              = options.onGeradeMode              ?? null;
   onVektorMode              = options.onVektorMode              ?? null;
+  onParamMode               = options.onParamMode               ?? null;
   onDeleteMode              = options.onDeleteMode              ?? null;
   onToggleOrtsvektoren      = options.onToggleOrtsvektoren      ?? null;
   onToggleRichtungsvektor   = options.onToggleRichtungsvektor   ?? null;
@@ -70,9 +72,14 @@ export function setPanelStatus(text, color = 'white') {
   statusSprite.material.map.needsUpdate = true;
 }
 
+// Gibt aktuelle x/y/z-Werte zurück (für λ-Abfrage in PARAM-Modus)
+export function getInputValues() {
+  return { ...values };
+}
+
 function createPanel() {
   panelRoot = new THREE.Group();
-  panelRoot.position.set(0, 0.1, -0.3);
+  panelRoot.position.set(0, 0.18, -0.25); // höher am Controller befestigt
   panelRoot.rotation.x = -Math.PI / 8;
   panelRoot.scale.set(0.15, 0.15, 0.15);
   leftController.add(panelRoot);
@@ -100,52 +107,55 @@ function createPanel() {
     if (onVektorMode) onVektorMode();
   });
 
-  // LOESCHEN aufgeteilt in P-DEL und G-DEL
-  addMedium('P-DEL', -0.2, -2.35, () => {
+  // PARAM: Punkt auf Gerade mit x als λ
+  addWide('PARAM (x=λ)', 0, -2.35, () => {
+    if (onParamMode) onParamMode();
+  });
+
+  // LOESCHEN: P-DEL und G-DEL
+  addMedium('P-DEL', -0.2, -2.8, () => {
     if (onDeleteMode) onDeleteMode('punkt');
   });
-  addMedium('G-DEL', 0.2, -2.35, () => {
+  addMedium('G-DEL', 0.2, -2.8, () => {
     if (onDeleteMode) onDeleteMode('gerade');
   });
 
   // Toggle-Reihe 1: OV / RV / GG
-  ovToggleBtn = addMedium('OV:AUS', -0.35, -2.8, () => {
+  ovToggleBtn = addMedium('OV:AUS', -0.35, -3.25, () => {
     ortsvektorenVisible = !ortsvektorenVisible;
     if (onToggleOrtsvektoren) onToggleOrtsvektoren(ortsvektorenVisible);
     updateButtonLabel(ovToggleBtn, ortsvektorenVisible ? 'OV:AN' : 'OV:AUS', ortsvektorenVisible);
   });
 
-  // RV startet sichtbar → grün
-  rvToggleBtn = addMedium('RV:AN', 0.0, -2.8, () => {
+  rvToggleBtn = addMedium('RV:AN', 0.0, -3.25, () => {
     richtungsvektorVisible = !richtungsvektorVisible;
     if (onToggleRichtungsvektor) onToggleRichtungsvektor(richtungsvektorVisible);
     updateButtonLabel(rvToggleBtn, richtungsvektorVisible ? 'RV:AN' : 'RV:AUS', richtungsvektorVisible);
   });
-  rvToggleBtn.material.color.setHex(0x44aa44);
+  rvToggleBtn.material.color.setHex(0x44aa44); // startet grün (AN)
 
-  ggToggleBtn = addMedium('GG:AUS', 0.35, -2.8, () => {
+  ggToggleBtn = addMedium('GG:AUS', 0.35, -3.25, () => {
     geradengleichungVisible = !geradengleichungVisible;
     if (onToggleGeradengleichung) onToggleGeradengleichung(geradengleichungVisible);
     updateButtonLabel(ggToggleBtn, geradengleichungVisible ? 'GG:AN' : 'GG:AUS', geradengleichungVisible);
   });
 
   // Toggle-Reihe 2: GL / KS
-  glToggleBtn = addMedium('GL:AN', -0.2, -3.25, () => {
+  glToggleBtn = addMedium('GL:AN', -0.2, -3.7, () => {
     glVisible = !glVisible;
     if (onToggleGL) onToggleGL(glVisible);
     updateButtonLabel(glToggleBtn, glVisible ? 'GL:AN' : 'GL:AUS', glVisible);
   });
-  // GL startet sichtbar → grüner Button
-  glToggleBtn.material.color.setHex(0x44aa44);
+  glToggleBtn.material.color.setHex(0x44aa44); // startet grün (AN)
 
-  ksToggleBtn = addMedium('KS:AUS', 0.2, -3.25, () => {
+  ksToggleBtn = addMedium('KS:AUS', 0.2, -3.7, () => {
     ksVisible = !ksVisible;
     if (onToggleBodenKS) onToggleBodenKS(ksVisible);
     updateButtonLabel(ksToggleBtn, ksVisible ? 'KS:AN' : 'KS:AUS', ksVisible);
   });
 
   // Hilfe
-  addWide('? HILFE', 0, -3.7, () => {
+  addWide('? HILFE', 0, -4.15, () => {
     helpVisible = !helpVisible;
     if (helpGroup) helpGroup.visible = helpVisible;
   });
@@ -258,8 +268,22 @@ function makeSmallButton(label, x, y, onClick) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 56;
-  const spr = makeTextSprite(label, 56);
+  mesh.userData.fontSize = 80;
+
+  // Quadratisches Canvas (256×256) passend zum quadratischen Button (0.2×0.2)
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 256;
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.font = 'bold 80px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 128, 128);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
   spr.position.set(0, 0, 0.06);
   spr.scale.set(0.2, 0.2, 1);
   mesh.add(spr);
@@ -289,67 +313,67 @@ function makeTextSprite(text, fontSize = 56) {
 function createHelpPanel() {
   helpGroup = new THREE.Group();
   helpGroup.visible = false;
-  helpGroup.position.set(0.65, 0.1, -0.3);
+  helpGroup.position.set(0.7, 0.18, -0.25);
   helpGroup.rotation.x = -Math.PI / 8;
   helpGroup.scale.set(0.15, 0.15, 0.15);
   leftController.add(helpGroup);
 
   const lines = [
-    '-- HILFE Version 6 --',
+    '--- HILFE V7 ---',
     '',
-    'PUNKT ERSTELLEN:',
-    'x/y/z einstellen,',
+    'PUNKT: x/y/z eingeben,',
     'dann [Punkt erzeugen]',
     '',
-    'GERADE erstellen:',
-    '[GERADE] → 2 Punkte',
-    'mit Ray auswaehlen',
+    'GERADE: [GERADE]',
+    'P1 dann P2 mit Ray',
     '(P1 leuchtet orange)',
     '',
-    'VEKTOR erstellen:',
-    '[VEKTOR] → P1 dann P2',
-    'mit Ray auswaehlen',
+    'VEKTOR: [VEKTOR]',
+    'P1 dann P2 mit Ray',
+    '',
+    'PARAM: x = lambda,',
+    '[PARAM] druecken,',
+    'dann Gerade anklicken',
+    '→ blauer Punkt erscheint',
     '',
     'LOESCHEN:',
-    '[P-DEL] → Punkt anklicken',
-    '[G-DEL] → gelbe Kugel',
+    '[P-DEL] Punkt anklicken',
+    '[G-DEL] gelbe Kugel',
     '',
-    'TOGGLE AN/AUS:',
-    'OV=Ortsvektoren',
-    'RV=Richtungsvektoren',
-    'GG=Geradengleichung',
-    'GL=Geradenlinie',
-    'KS=Boden-Koordinaten',
+    'TOGGLE:',
+    'OV/RV/GG/GL/KS',
     '',
-    'TELEPORT: linker Ctrl,',
-    'Trigger halten',
+    'TELEPORT: linker Ctrl',
+    'Trigger gedrückt halten',
   ];
 
   let row = 0;
   for (const line of lines) {
     if (line === '') { row++; continue; }
     const sprite = makeHelpSprite(line);
-    sprite.position.set(0.45, -row * 0.32, 0);
+    sprite.position.set(0, -row * 0.32, 0);
     helpGroup.add(sprite);
     row++;
   }
 }
 
 function makeHelpSprite(text) {
+  // Canvas 700×112 → Sprite aspect 700/112 = 6.25
+  // Sprite scale (1.875, 0.3, 1) → 1.875/0.3 = 6.25 ✓
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  canvas.width = 512;
-  canvas.height = 110;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 700;
+  canvas.height = 112;
+  ctx.clearRect(0, 0, 700, 112);
   ctx.fillStyle = 'rgba(180,220,255,1)';
-  ctx.font = 'bold 48px Arial';
+  ctx.font = 'bold 42px Arial';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 10, canvas.height / 2);
+  ctx.fillText(text, 12, 56);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-  sprite.scale.set(1.05, 0.32, 1);
+  sprite.scale.set(1.875, 0.3, 1);
   return sprite;
 }
 

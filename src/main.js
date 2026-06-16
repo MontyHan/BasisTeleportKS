@@ -4,7 +4,7 @@ import { initControllers, updateControllers } from './core/controllers.js';
 import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
 
-import { initInputUI, handleUISelection, setPanelStatus } from './core/inputUI.js';
+import { initInputUI, handleUISelection, setPanelStatus, getInputValues } from './core/inputUI.js';
 import { initVectorUI, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
 import { createPoint, createGerade, createRichtungsvektor, createGeradengleichungLabel } from './core/geometryFactory.js';
 
@@ -14,12 +14,14 @@ let rightController;
 
 let pointCounter = 0;
 const allPointMeshes = []; // { mesh, mathCoords: {x,y,z}, originalColor }
-const allGeraden = [];     // { line, rvArrow, rvLabel, ggLabel, marker }
-const allVektoren = [];    // { arrow, label } — standalone Vektoren zwischen zwei Punkten
+const allGeraden = [];     // { line, rvArrow, rvLabel, ggLabel, marker, p1Math, p2Math }
+const allVektoren = [];    // { arrow, label }
+const allParamPoints = []; // THREE.Mesh — blaue Parameterpunkte
 
 let appMode = 'normal';
 // 'normal' | 'select-gerade-1' | 'select-gerade-2'
 // | 'select-vektor-1' | 'select-vektor-2'
+// | 'select-param-gerade'
 // | 'select-delete-punkt' | 'select-delete-gerade'
 let selectedP1 = null;
 
@@ -39,7 +41,7 @@ function init() {
   scene.background = new THREE.Color(0x202040);
 
   rig = new THREE.Group();
-  rig.position.set(3, 0, 3); // Startposition math (3/3) → Three.js (3,0,3)
+  rig.position.set(3, 0, 3); // Startposition math (3/3)
   scene.add(rig);
 
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -59,21 +61,27 @@ function init() {
   dirLight.position.set(3, 6, 4);
   scene.add(dirLight);
 
+  // Durchscheinender Fußboden — Objekte im negativen z-Bereich (Mathebuch) bleiben sichtbar
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ color: 0x222222 })
+    new THREE.MeshStandardMaterial({
+      color: 0x334466,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide
+    })
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  createVersionLabel('Version 6');
+  createVersionLabel('Version 7');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
   rightController = controllers.right;
 
   richtungsvektorGroup = new THREE.Group();
-  richtungsvektorGroup.visible = true; // RV startet sichtbar
+  richtungsvektorGroup.visible = true; // RV standardmäßig sichtbar
   scene.add(richtungsvektorGroup);
 
   geradengleichungGroup = new THREE.Group();
@@ -81,7 +89,7 @@ function init() {
   scene.add(geradengleichungGroup);
 
   geradenLinienGroup = new THREE.Group();
-  geradenLinienGroup.visible = true; // Geraden sichtbar per default
+  geradenLinienGroup.visible = true;
   scene.add(geradenLinienGroup);
 
   bodenKSGroup = createBodenKSLabels();
@@ -91,7 +99,6 @@ function init() {
 
   initInputUI(scene, camera, rig, controllers.left, controllers.right, {
     onCreatePoint: (x, y, z) => {
-      // Mathebuch → Three.js: (x,y,z) → (y,z,x)
       const mesh = createPoint(scene, y, z, x, 0xff0000, 0.05);
       allPointMeshes.push({ mesh, mathCoords: { x, y, z }, originalColor: 0xff0000 });
       addOrtsvektorForPoint(mesh, x, y, z, pointCounter++);
@@ -117,6 +124,21 @@ function init() {
       }
     },
 
+    onParamMode: () => {
+      if (appMode === 'select-param-gerade') {
+        cancelSelection();
+      } else {
+        if (appMode !== 'normal') cancelSelection();
+        if (allGeraden.length === 0) {
+          setPanelStatus('Erst Gerade erstellen!', '#ff4444');
+          return;
+        }
+        appMode = 'select-param-gerade';
+        allGeraden.forEach(g => { g.marker.visible = true; });
+        setPanelStatus('x=lambda. Gerade waehlen.', '#88ffff');
+      }
+    },
+
     onDeleteMode: (type) => {
       if (type === 'punkt') {
         if (appMode === 'select-delete-punkt') {
@@ -138,25 +160,11 @@ function init() {
       }
     },
 
-    onToggleOrtsvektoren: (visible) => {
-      toggleOrtsvektoren(visible);
-    },
-
-    onToggleRichtungsvektor: (visible) => {
-      richtungsvektorGroup.visible = visible;
-    },
-
-    onToggleGeradengleichung: (visible) => {
-      geradengleichungGroup.visible = visible;
-    },
-
-    onToggleGL: (visible) => {
-      geradenLinienGroup.visible = visible;
-    },
-
-    onToggleBodenKS: (visible) => {
-      bodenKSGroup.visible = visible;
-    }
+    onToggleOrtsvektoren: (visible) => { toggleOrtsvektoren(visible); },
+    onToggleRichtungsvektor: (visible) => { richtungsvektorGroup.visible = visible; },
+    onToggleGeradengleichung: (visible) => { geradengleichungGroup.visible = visible; },
+    onToggleGL: (visible) => { geradenLinienGroup.visible = visible; },
+    onToggleBodenKS: (visible) => { bodenKSGroup.visible = visible; }
   });
 
   controllers.right.addEventListener('selectstart', () => {
@@ -177,6 +185,7 @@ function handlePointRaycast() {
   pointRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(pointTempMatrix);
   pointRaycaster.far = 20;
 
+  // Modi die gegen Punkte raycasten
   if (
     appMode === 'select-gerade-1' ||
     appMode === 'select-gerade-2' ||
@@ -223,7 +232,7 @@ function handlePointRaycast() {
       const ggLabel = createGeradengleichungLabel(p1, p2);
       geradengleichungGroup.add(ggLabel);
 
-      // Lösch-Markierung: kleine gelbe Kugel am Mittelpunkt der Gerade
+      // Lösch-Markierung (gelbe Kugel am Mittelpunkt)
       const midThree = new THREE.Vector3(
         (p1.y + p2.y) / 2,
         (p1.z + p2.z) / 2,
@@ -237,7 +246,7 @@ function handlePointRaycast() {
       marker.visible = false;
       scene.add(marker);
 
-      allGeraden.push({ line, rvArrow, rvLabel, ggLabel, marker });
+      allGeraden.push({ line, rvArrow, rvLabel, ggLabel, marker, p1Math: { ...p1 }, p2Math: { ...p2 } });
 
       selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
       selectedP1 = null;
@@ -254,7 +263,8 @@ function handlePointRaycast() {
       setPanelStatus('Bereit');
     }
 
-  } else if (appMode === 'select-delete-gerade') {
+  // Modi die gegen Geraden-Marker raycasten
+  } else if (appMode === 'select-delete-gerade' || appMode === 'select-param-gerade') {
     const markers = allGeraden.map(g => g.marker);
     const intersects = pointRaycaster.intersectObjects(markers, false);
     if (!intersects.length) return;
@@ -263,12 +273,32 @@ function handlePointRaycast() {
     const geradeData = allGeraden.find(g => g.marker === hitMarker);
     if (!geradeData) return;
 
-    geradenLinienGroup.remove(geradeData.line);
-    if (geradeData.rvArrow) richtungsvektorGroup.remove(geradeData.rvArrow);
-    if (geradeData.rvLabel) richtungsvektorGroup.remove(geradeData.rvLabel);
-    geradengleichungGroup.remove(geradeData.ggLabel);
-    scene.remove(geradeData.marker);
-    allGeraden.splice(allGeraden.indexOf(geradeData), 1);
+    if (appMode === 'select-delete-gerade') {
+      geradenLinienGroup.remove(geradeData.line);
+      if (geradeData.rvArrow) richtungsvektorGroup.remove(geradeData.rvArrow);
+      if (geradeData.rvLabel) richtungsvektorGroup.remove(geradeData.rvLabel);
+      geradengleichungGroup.remove(geradeData.ggLabel);
+      scene.remove(geradeData.marker);
+      allGeraden.splice(allGeraden.indexOf(geradeData), 1);
+
+    } else if (appMode === 'select-param-gerade') {
+      const lambda = getInputValues().x;
+      const OV = geradeData.p1Math;
+      const RV = {
+        x: geradeData.p2Math.x - OV.x,
+        y: geradeData.p2Math.y - OV.y,
+        z: geradeData.p2Math.z - OV.z
+      };
+      // Punkt auf der Gerade: OV + λ·RV (Mathebuch-Koordinaten)
+      const mp = {
+        x: OV.x + lambda * RV.x,
+        y: OV.y + lambda * RV.y,
+        z: OV.z + lambda * RV.z
+      };
+      // Mathebuch (x,y,z) → Three.js (y,z,x)
+      const paramMesh = createPoint(scene, mp.y, mp.z, mp.x, 0x44aaff, 0.07);
+      allParamPoints.push(paramMesh);
+    }
 
     allGeraden.forEach(g => { g.marker.visible = false; });
     appMode = 'normal';
@@ -292,7 +322,7 @@ function createBodenKSLabels() {
 
   for (let tX = -10; tX <= 10; tX++) {
     for (let tZ = -10; tZ <= 10; tZ++) {
-      if (tX === 0 || tZ === 0) continue; // Achsen überspringen (schon durch grid.js beschriftet)
+      if (tX === 0 || tZ === 0) continue;
       const mathX = tZ; // Three.js Z = Mathebuch x
       const mathY = tX; // Three.js X = Mathebuch y
       const text = `(${mathX}/${mathY})`;
@@ -311,7 +341,7 @@ function createBodenKSLabels() {
       const texture = new THREE.CanvasTexture(canvas);
       texture.minFilter = THREE.LinearFilter;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-      sprite.scale.set(0.3, 0.15, 1); // 128/64 = 2:1 = 0.3/0.15 ✓
+      sprite.scale.set(0.3, 0.15, 1);
       sprite.position.set(tX, 0.05, tZ);
       group.add(sprite);
     }
@@ -323,27 +353,26 @@ function createBodenKSLabels() {
 function createMathTextbookAxes(length) {
   const axesGroup = new THREE.Group();
 
-  // x-Achse (Mathebuch) = Three.js Z-Richtung, rot
+  // x-Achse (Mathebuch) = Three.js Z, rot
   axesGroup.add(new THREE.ArrowHelper(
     new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0),
     length, 0xff0000, length * 0.1, length * 0.05
   ));
-
-  // y-Achse (Mathebuch) = Three.js X-Richtung, grün
+  // y-Achse (Mathebuch) = Three.js X, grün
   axesGroup.add(new THREE.ArrowHelper(
     new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0),
     length, 0x00ff00, length * 0.1, length * 0.05
   ));
-
-  // z-Achse (Mathebuch) = Three.js Y-Richtung, blau
+  // z-Achse (Mathebuch) = Three.js Y, blau
   axesGroup.add(new THREE.ArrowHelper(
     new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0),
     length, 0x0000ff, length * 0.1, length * 0.05
   ));
 
   const labelGroup = new THREE.Group();
-  addAxisLabel('X', new THREE.Vector3(0, 0, length + 0.5), labelGroup);
-  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0, 0), labelGroup);
+  // X und Y Labels 0.2 nach oben, damit sie lesbar über dem Boden schweben
+  addAxisLabel('X', new THREE.Vector3(0, 0.2, length + 0.5), labelGroup);
+  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0.2, 0), labelGroup);
   addAxisLabel('Z', new THREE.Vector3(0, length + 0.5, 0), labelGroup);
   axesGroup.add(labelGroup);
 
@@ -385,7 +414,7 @@ function createVersionLabel(version) {
     new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(2, 0.01, 3); // 2 Einheiten nach rechts (math y+2 = Three.js X+2)
+  mesh.position.set(2, 0.01, 3);
   scene.add(mesh);
 }
 
