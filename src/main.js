@@ -4,7 +4,10 @@ import { initControllers, updateControllers } from './core/controllers.js';
 import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
 
-import { initInputUI, handleUISelection, setPanelStatus, getInputValues } from './core/inputUI.js';
+import {
+  initInputUI, handleUISelection, setPanelStatus,
+  getLambdaValue, getInputValues
+} from './core/inputUI.js';
 import { initVectorUI, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
 import { createPoint, createGerade, createRichtungsvektor, createGeradengleichungLabel } from './core/geometryFactory.js';
 
@@ -13,15 +16,16 @@ let rig;
 let rightController;
 
 let pointCounter = 0;
-const allPointMeshes = []; // { mesh, mathCoords: {x,y,z}, originalColor }
-const allGeraden = [];     // { line, rvArrow, rvLabel, ggLabel, marker, p1Math, p2Math }
-const allVektoren = [];    // { arrow, label }
-const allParamPoints = []; // THREE.Mesh — blaue Parameterpunkte
+const allPointMeshes = []; // { mesh, mathCoords:{x,y,z}, originalColor }
+const allGeraden    = []; // { line, rvArrow, rvLabel, ggLabel, marker, p1Math, p2Math }
+const allVektoren   = []; // { arrow, label, p1Math, p2Math }
+const laengeMarkers = []; // { mesh, lengthValue } — temporär für LAENGE-Modus
 
 let appMode = 'normal';
 // 'normal' | 'select-gerade-1' | 'select-gerade-2'
-// | 'select-vektor-1' | 'select-vektor-2'
+// | 'select-vektor-1'  | 'select-vektor-2'
 // | 'select-param-gerade'
+// | 'select-vector-length'
 // | 'select-delete-punkt' | 'select-delete-gerade'
 let selectedP1 = null;
 
@@ -30,7 +34,7 @@ let geradengleichungGroup;
 let geradenLinienGroup;
 let bodenKSGroup;
 
-const pointRaycaster = new THREE.Raycaster();
+const pointRaycaster  = new THREE.Raycaster();
 const pointTempMatrix = new THREE.Matrix4();
 
 init();
@@ -41,7 +45,7 @@ function init() {
   scene.background = new THREE.Color(0x202040);
 
   rig = new THREE.Group();
-  rig.position.set(3, 0, 3); // Startposition math (3/3)
+  rig.position.set(3, 0, 3);
   scene.add(rig);
 
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -61,27 +65,22 @@ function init() {
   dirLight.position.set(3, 6, 4);
   scene.add(dirLight);
 
-  // Durchscheinender Fußboden — Objekte im negativen z-Bereich (Mathebuch) bleiben sichtbar
+  // Durchscheinender Boden
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0x334466,
-      transparent: true,
-      opacity: 0.18,
-      side: THREE.DoubleSide
-    })
+    new THREE.MeshStandardMaterial({ color: 0x334466, transparent: true, opacity: 0.18, side: THREE.DoubleSide })
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  createVersionLabel('Version 7');
+  createVersionLabel('Version 8');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
   rightController = controllers.right;
 
   richtungsvektorGroup = new THREE.Group();
-  richtungsvektorGroup.visible = true; // RV standardmäßig sichtbar
+  richtungsvektorGroup.visible = true;
   scene.add(richtungsvektorGroup);
 
   geradengleichungGroup = new THREE.Group();
@@ -99,85 +98,144 @@ function init() {
 
   initInputUI(scene, camera, rig, controllers.left, controllers.right, {
     onCreatePoint: (x, y, z) => {
-      const mesh = createPoint(scene, y, z, x, 0xff0000, 0.05);
-      allPointMeshes.push({ mesh, mathCoords: { x, y, z }, originalColor: 0xff0000 });
-      addOrtsvektorForPoint(mesh, x, y, z, pointCounter++);
+      addFullPoint(x, y, z, 0xff0000);
     },
 
     onGeradeMode: () => {
-      if (appMode === 'select-gerade-1' || appMode === 'select-gerade-2') {
-        cancelSelection();
-      } else {
-        if (appMode !== 'normal') cancelSelection();
-        appMode = 'select-gerade-1';
-        setPanelStatus('Punkt 1 waehlen...', '#ffff00');
-      }
+      if (appMode === 'select-gerade-1' || appMode === 'select-gerade-2') { cancelSelection(); return; }
+      if (appMode !== 'normal') cancelSelection();
+      appMode = 'select-gerade-1';
+      setPanelStatus('Punkt 1 waehlen...', '#ffff00');
     },
 
     onVektorMode: () => {
-      if (appMode === 'select-vektor-1' || appMode === 'select-vektor-2') {
-        cancelSelection();
-      } else {
-        if (appMode !== 'normal') cancelSelection();
-        appMode = 'select-vektor-1';
-        setPanelStatus('Vekt. P1 waehlen...', '#ffff00');
-      }
+      if (appMode === 'select-vektor-1' || appMode === 'select-vektor-2') { cancelSelection(); return; }
+      if (appMode !== 'normal') cancelSelection();
+      appMode = 'select-vektor-1';
+      setPanelStatus('Vekt. P1 waehlen...', '#ffff00');
     },
 
     onParamMode: () => {
-      if (appMode === 'select-param-gerade') {
-        cancelSelection();
-      } else {
-        if (appMode !== 'normal') cancelSelection();
-        if (allGeraden.length === 0) {
-          setPanelStatus('Erst Gerade erstellen!', '#ff4444');
-          return;
-        }
-        appMode = 'select-param-gerade';
-        allGeraden.forEach(g => { g.marker.visible = true; });
-        setPanelStatus('x=lambda. Gerade waehlen.', '#88ffff');
-      }
+      if (appMode === 'select-param-gerade') { cancelSelection(); return; }
+      if (allGeraden.length === 0) { setPanelStatus('Erst Gerade erstellen!', '#ff4444'); return; }
+      if (appMode !== 'normal') cancelSelection();
+      appMode = 'select-param-gerade';
+      allGeraden.forEach(g => { g.marker.visible = true; });
+      setPanelStatus('λ gesetzt. Gerade waehlen.', '#88ffff');
+    },
+
+    onLaengeMode: () => {
+      if (appMode === 'select-vector-length') { cancelSelection(); return; }
+      if (appMode !== 'normal') cancelSelection();
+      enterLaengeMode();
     },
 
     onDeleteMode: (type) => {
       if (type === 'punkt') {
-        if (appMode === 'select-delete-punkt') {
-          cancelSelection();
-        } else {
-          if (appMode !== 'normal') cancelSelection();
-          appMode = 'select-delete-punkt';
-          setPanelStatus('Punkt loeschen...', '#ff6666');
-        }
+        if (appMode === 'select-delete-punkt') { cancelSelection(); return; }
+        if (appMode !== 'normal') cancelSelection();
+        appMode = 'select-delete-punkt';
+        setPanelStatus('Punkt loeschen...', '#ff6666');
       } else if (type === 'gerade') {
-        if (appMode === 'select-delete-gerade') {
-          cancelSelection();
-        } else {
-          if (appMode !== 'normal') cancelSelection();
-          appMode = 'select-delete-gerade';
-          allGeraden.forEach(g => { g.marker.visible = true; });
-          setPanelStatus('Gerade loeschen...', '#ff6666');
-        }
+        if (appMode === 'select-delete-gerade') { cancelSelection(); return; }
+        if (appMode !== 'normal') cancelSelection();
+        appMode = 'select-delete-gerade';
+        allGeraden.forEach(g => { g.marker.visible = true; });
+        setPanelStatus('Gerade loeschen...', '#ff6666');
       }
     },
 
-    onToggleOrtsvektoren: (visible) => { toggleOrtsvektoren(visible); },
-    onToggleRichtungsvektor: (visible) => { richtungsvektorGroup.visible = visible; },
-    onToggleGeradengleichung: (visible) => { geradengleichungGroup.visible = visible; },
-    onToggleGL: (visible) => { geradenLinienGroup.visible = visible; },
-    onToggleBodenKS: (visible) => { bodenKSGroup.visible = visible; }
+    onToggleOrtsvektoren:     (v) => { toggleOrtsvektoren(v); },
+    onToggleRichtungsvektor:  (v) => { richtungsvektorGroup.visible = v; },
+    onToggleGeradengleichung: (v) => { geradengleichungGroup.visible = v; },
+    onToggleGL:               (v) => { geradenLinienGroup.visible = v; },
+    onToggleBodenKS:          (v) => { bodenKSGroup.visible = v; }
   });
 
   controllers.right.addEventListener('selectstart', () => {
     const hitUI = handleUISelection();
-    if (!hitUI && appMode !== 'normal') {
-      handlePointRaycast();
-    }
+    if (!hitUI && appMode !== 'normal') handleRaycast();
   });
 
   initTeleport(renderer, scene, rig);
 }
 
-function handlePointRaycast() {
+// ===== Hilfsfunktion: vollständigen Punkt anlegen =====
+
+function addFullPoint(mx, my, mz, color = 0xff0000) {
+  const mesh = createPoint(scene, my, mz, mx, color, color === 0xff0000 ? 0.05 : 0.07);
+  allPointMeshes.push({ mesh, mathCoords: { x: mx, y: my, z: mz }, originalColor: color });
+  addOrtsvektorForPoint(mesh, mx, my, mz, pointCounter++);
+  return mesh;
+}
+
+// ===== LAENGE-Modus =====
+
+function enterLaengeMode() {
+  const totalVectors = allPointMeshes.length + allVektoren.length + allGeraden.length;
+  if (totalVectors === 0) { setPanelStatus('Keine Vektoren!', '#ff4444'); return; }
+
+  // OV-Marker an Punkt-Positionen
+  for (const pd of allPointMeshes) {
+    const c = pd.mathCoords;
+    const len = Math.sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff })
+    );
+    // Endpunkt des OV = Three.js (y, z, x)
+    marker.position.set(c.y, c.z, c.x);
+    scene.add(marker);
+    laengeMarkers.push({ mesh: marker, lengthValue: len });
+  }
+
+  // Standalone Vektor-Marker
+  for (const v of allVektoren) {
+    if (!v.p1Math || !v.p2Math) continue;
+    const d = {
+      x: v.p2Math.x - v.p1Math.x,
+      y: v.p2Math.y - v.p1Math.y,
+      z: v.p2Math.z - v.p1Math.z
+    };
+    const len = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff })
+    );
+    marker.position.set(v.p2Math.y, v.p2Math.z, v.p2Math.x);
+    scene.add(marker);
+    laengeMarkers.push({ mesh: marker, lengthValue: len });
+  }
+
+  // Gerade-RV-Marker
+  for (const g of allGeraden) {
+    const d = {
+      x: g.p2Math.x - g.p1Math.x,
+      y: g.p2Math.y - g.p1Math.y,
+      z: g.p2Math.z - g.p1Math.z
+    };
+    const len = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff })
+    );
+    marker.position.set(g.p2Math.y, g.p2Math.z, g.p2Math.x);
+    scene.add(marker);
+    laengeMarkers.push({ mesh: marker, lengthValue: len });
+  }
+
+  appMode = 'select-vector-length';
+  setPanelStatus('Vektorspitze waehlen', '#00ffff');
+}
+
+function clearLaengeMarkers() {
+  laengeMarkers.forEach(m => scene.remove(m.mesh));
+  laengeMarkers.length = 0;
+}
+
+// ===== Hauptraycast-Handler =====
+
+function handleRaycast() {
   if (!rightController) return;
 
   pointTempMatrix.identity().extractRotation(rightController.matrixWorld);
@@ -185,20 +243,16 @@ function handlePointRaycast() {
   pointRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(pointTempMatrix);
   pointRaycaster.far = 20;
 
-  // Modi die gegen Punkte raycasten
+  // --- Modi die auf Punkte zielen ---
   if (
-    appMode === 'select-gerade-1' ||
-    appMode === 'select-gerade-2' ||
-    appMode === 'select-vektor-1' ||
-    appMode === 'select-vektor-2' ||
+    appMode === 'select-gerade-1'  || appMode === 'select-gerade-2' ||
+    appMode === 'select-vektor-1'  || appMode === 'select-vektor-2' ||
     appMode === 'select-delete-punkt'
   ) {
     const meshes = allPointMeshes.map(p => p.mesh);
-    const intersects = pointRaycaster.intersectObjects(meshes, false);
-    if (!intersects.length) return;
-
-    const hitMesh = intersects[0].object;
-    const pointData = allPointMeshes.find(p => p.mesh === hitMesh);
+    const hits = pointRaycaster.intersectObjects(meshes, false);
+    if (!hits.length) return;
+    const pointData = allPointMeshes.find(p => p.mesh === hits[0].object);
     if (!pointData) return;
 
     if (appMode === 'select-vektor-1') {
@@ -208,14 +262,10 @@ function handlePointRaycast() {
       setPanelStatus('Vekt. P2 waehlen...', '#ffaa00');
 
     } else if (appMode === 'select-vektor-2') {
-      const p1 = selectedP1.mathCoords;
-      const p2 = pointData.mathCoords;
+      const p1 = selectedP1.mathCoords, p2 = pointData.mathCoords;
       const { arrow, label } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
-      allVektoren.push({ arrow, label });
-      selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
-      selectedP1 = null;
-      appMode = 'normal';
-      setPanelStatus('Bereit');
+      allVektoren.push({ arrow, label, p1Math: { ...p1 }, p2Math: { ...p2 } });
+      finishSelection();
 
     } else if (appMode === 'select-gerade-1') {
       selectedP1 = pointData;
@@ -224,19 +274,14 @@ function handlePointRaycast() {
       setPanelStatus('Punkt 2 waehlen...', '#ffaa00');
 
     } else if (appMode === 'select-gerade-2') {
-      const p1 = selectedP1.mathCoords;
-      const p2 = pointData.mathCoords;
-
-      const line = createGerade(geradenLinienGroup, p1, p2);
+      const p1 = selectedP1.mathCoords, p2 = pointData.mathCoords;
+      const line   = createGerade(geradenLinienGroup, p1, p2);
       const { arrow: rvArrow, label: rvLabel } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
       const ggLabel = createGeradengleichungLabel(p1, p2);
       geradengleichungGroup.add(ggLabel);
 
-      // Lösch-Markierung (gelbe Kugel am Mittelpunkt)
       const midThree = new THREE.Vector3(
-        (p1.y + p2.y) / 2,
-        (p1.z + p2.z) / 2,
-        (p1.x + p2.x) / 2
+        (p1.y + p2.y) / 2, (p1.z + p2.z) / 2, (p1.x + p2.x) / 2
       );
       const marker = new THREE.Mesh(
         new THREE.SphereGeometry(0.07, 8, 8),
@@ -247,11 +292,7 @@ function handlePointRaycast() {
       scene.add(marker);
 
       allGeraden.push({ line, rvArrow, rvLabel, ggLabel, marker, p1Math: { ...p1 }, p2Math: { ...p2 } });
-
-      selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
-      selectedP1 = null;
-      appMode = 'normal';
-      setPanelStatus('Bereit');
+      finishSelection();
 
     } else if (appMode === 'select-delete-punkt') {
       if (pointData.mesh.userData.ortsvektor) {
@@ -263,14 +304,12 @@ function handlePointRaycast() {
       setPanelStatus('Bereit');
     }
 
-  // Modi die gegen Geraden-Marker raycasten
+  // --- Modi die auf Geraden-Marker zielen ---
   } else if (appMode === 'select-delete-gerade' || appMode === 'select-param-gerade') {
     const markers = allGeraden.map(g => g.marker);
-    const intersects = pointRaycaster.intersectObjects(markers, false);
-    if (!intersects.length) return;
-
-    const hitMarker = intersects[0].object;
-    const geradeData = allGeraden.find(g => g.marker === hitMarker);
+    const hits = pointRaycaster.intersectObjects(markers, false);
+    if (!hits.length) return;
+    const geradeData = allGeraden.find(g => g.marker === hits[0].object);
     if (!geradeData) return;
 
     if (appMode === 'select-delete-gerade') {
@@ -282,28 +321,45 @@ function handlePointRaycast() {
       allGeraden.splice(allGeraden.indexOf(geradeData), 1);
 
     } else if (appMode === 'select-param-gerade') {
-      const lambda = getInputValues().x;
+      // PARAM: Punkt auf der Gerade berechnen (λ aus Panel)
+      const lambda = getLambdaValue();
       const OV = geradeData.p1Math;
       const RV = {
         x: geradeData.p2Math.x - OV.x,
         y: geradeData.p2Math.y - OV.y,
         z: geradeData.p2Math.z - OV.z
       };
-      // Punkt auf der Gerade: OV + λ·RV (Mathebuch-Koordinaten)
-      const mp = {
-        x: OV.x + lambda * RV.x,
-        y: OV.y + lambda * RV.y,
-        z: OV.z + lambda * RV.z
-      };
-      // Mathebuch (x,y,z) → Three.js (y,z,x)
-      const paramMesh = createPoint(scene, mp.y, mp.z, mp.x, 0x44aaff, 0.07);
-      allParamPoints.push(paramMesh);
+      const mp = { x: OV.x + lambda * RV.x, y: OV.y + lambda * RV.y, z: OV.z + lambda * RV.z };
+      // Als vollwertigen Punkt hinzufügen (blau, mit OV, löschbar, für Vektoren nutzbar)
+      addFullPoint(mp.x, mp.y, mp.z, 0x44aaff);
     }
 
     allGeraden.forEach(g => { g.marker.visible = false; });
     appMode = 'normal';
     setPanelStatus('Bereit');
+
+  // --- LAENGE-Modus ---
+  } else if (appMode === 'select-vector-length') {
+    const meshes = laengeMarkers.map(m => m.mesh);
+    const hits = pointRaycaster.intersectObjects(meshes, false);
+    if (!hits.length) return;
+    const data = laengeMarkers.find(m => m.mesh === hits[0].object);
+    if (!data) return;
+
+    const rounded = Math.round(data.lengthValue * 100) / 100;
+    setPanelStatus(`|u| = ${rounded}`, '#00ffff');
+    clearLaengeMarkers();
+    appMode = 'normal';
   }
+}
+
+function finishSelection() {
+  if (selectedP1) {
+    selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
+    selectedP1 = null;
+  }
+  appMode = 'normal';
+  setPanelStatus('Bereit');
 }
 
 function cancelSelection() {
@@ -312,32 +368,28 @@ function cancelSelection() {
     selectedP1 = null;
   }
   allGeraden.forEach(g => { g.marker.visible = false; });
+  clearLaengeMarkers();
   appMode = 'normal';
   setPanelStatus('Bereit');
 }
 
+// ===== Hilfsfunktionen Szene =====
+
 function createBodenKSLabels() {
   const group = new THREE.Group();
   group.visible = false;
-
   for (let tX = -10; tX <= 10; tX++) {
     for (let tZ = -10; tZ <= 10; tZ++) {
       if (tX === 0 || tZ === 0) continue;
-      const mathX = tZ; // Three.js Z = Mathebuch x
-      const mathY = tX; // Three.js X = Mathebuch y
-      const text = `(${mathX}/${mathY})`;
-
+      const text = `(${tZ}/${tX})`; // mathX=tZ, mathY=tX
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      canvas.width = 128;
-      canvas.height = 64;
+      canvas.width = 128; canvas.height = 64;
       ctx.clearRect(0, 0, 128, 64);
       ctx.fillStyle = 'rgba(200,210,255,1)';
       ctx.font = 'bold 16px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(text, 64, 32);
-
       const texture = new THREE.CanvasTexture(canvas);
       texture.minFilter = THREE.LinearFilter;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
@@ -346,49 +398,31 @@ function createBodenKSLabels() {
       group.add(sprite);
     }
   }
-
   return group;
 }
 
 function createMathTextbookAxes(length) {
-  const axesGroup = new THREE.Group();
-
-  // x-Achse (Mathebuch) = Three.js Z, rot
-  axesGroup.add(new THREE.ArrowHelper(
-    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0),
-    length, 0xff0000, length * 0.1, length * 0.05
-  ));
-  // y-Achse (Mathebuch) = Three.js X, grün
-  axesGroup.add(new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0),
-    length, 0x00ff00, length * 0.1, length * 0.05
-  ));
-  // z-Achse (Mathebuch) = Three.js Y, blau
-  axesGroup.add(new THREE.ArrowHelper(
-    new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0),
-    length, 0x0000ff, length * 0.1, length * 0.05
-  ));
-
-  const labelGroup = new THREE.Group();
-  // X und Y Labels 0.2 nach oben, damit sie lesbar über dem Boden schweben
-  addAxisLabel('X', new THREE.Vector3(0, 0.2, length + 0.5), labelGroup);
-  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0.2, 0), labelGroup);
-  addAxisLabel('Z', new THREE.Vector3(0, length + 0.5, 0), labelGroup);
-  axesGroup.add(labelGroup);
-
-  scene.add(axesGroup);
+  const g = new THREE.Group();
+  g.add(new THREE.ArrowHelper(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,0), length, 0xff0000, length*0.1, length*0.05));
+  g.add(new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), length, 0x00ff00, length*0.1, length*0.05));
+  g.add(new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), length, 0x0000ff, length*0.1, length*0.05));
+  const lg = new THREE.Group();
+  addAxisLabel('X', new THREE.Vector3(0, 0.2, length + 0.5), lg);
+  addAxisLabel('Y', new THREE.Vector3(length + 0.5, 0.2, 0), lg);
+  addAxisLabel('Z', new THREE.Vector3(0, length + 0.5, 0), lg);
+  g.add(lg);
+  scene.add(g);
 }
 
 function addAxisLabel(text, position, group) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 256; canvas.height = 256;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = 'white';
   ctx.font = 'bold 100px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 128);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
@@ -401,12 +435,11 @@ function createVersionLabel(version) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 512; canvas.height = 128;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, 512, 128);
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = 'bold 64px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(version, canvas.width / 2, canvas.height / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(version, 256, 64);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const mesh = new THREE.Mesh(
