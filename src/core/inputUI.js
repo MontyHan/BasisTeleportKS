@@ -20,13 +20,20 @@ let onDeleteMode = null;
 let onToggleOrtsvektoren = null;
 let onToggleRichtungsvektor = null;
 let onToggleGeradengleichung = null;
+let onToggleGL = null;
+let onToggleBodenKS = null;
 
 let ortsvektorenVisible = false;
 let richtungsvektorVisible = false;
 let geradengleichungVisible = false;
+let glVisible = true;   // Geradenlinie startet sichtbar
+let ksVisible = false;  // BodenKS startet versteckt
+
 let ovToggleBtn = null;
 let rvToggleBtn = null;
 let ggToggleBtn = null;
+let glToggleBtn = null;
+let ksToggleBtn = null;
 
 export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   scene = s;
@@ -35,12 +42,14 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   leftController = lCtrl;
   rightController = rCtrl;
 
-  onCreatePoint           = options.onCreatePoint           ?? null;
-  onGeradeMode            = options.onGeradeMode            ?? null;
-  onDeleteMode            = options.onDeleteMode            ?? null;
-  onToggleOrtsvektoren    = options.onToggleOrtsvektoren    ?? null;
-  onToggleRichtungsvektor = options.onToggleRichtungsvektor ?? null;
-  onToggleGeradengleichung = options.onToggleGeradengleichung ?? null;
+  onCreatePoint             = options.onCreatePoint             ?? null;
+  onGeradeMode              = options.onGeradeMode              ?? null;
+  onDeleteMode              = options.onDeleteMode              ?? null;
+  onToggleOrtsvektoren      = options.onToggleOrtsvektoren      ?? null;
+  onToggleRichtungsvektor   = options.onToggleRichtungsvektor   ?? null;
+  onToggleGeradengleichung  = options.onToggleGeradengleichung  ?? null;
+  onToggleGL                = options.onToggleGL                ?? null;
+  onToggleBodenKS           = options.onToggleBodenKS           ?? null;
 
   createPanel();
   createHelpPanel();
@@ -76,7 +85,7 @@ function createPanel() {
   statusSprite.scale.set(0.9, 0.3, 1);
   panelRoot.add(statusSprite);
 
-  // Aktions-Buttons (alle wide, 56px)
+  // Aktions-Buttons
   addWide('Punkt erzeugen', 0, -1.45, () => {
     if (onCreatePoint) onCreatePoint(values.x, values.y, values.z);
   });
@@ -85,11 +94,15 @@ function createPanel() {
     if (onGeradeMode) onGeradeMode();
   });
 
-  addWide('LOESCHEN', 0, -2.35, () => {
-    if (onDeleteMode) onDeleteMode();
+  // LOESCHEN aufgeteilt in P-DEL und G-DEL
+  addMedium('P-DEL', -0.2, -2.35, () => {
+    if (onDeleteMode) onDeleteMode('punkt');
+  });
+  addMedium('G-DEL', 0.2, -2.35, () => {
+    if (onDeleteMode) onDeleteMode('gerade');
   });
 
-  // Toggle-Buttons nebeneinander (OV / RV / GG) — medium, 56px
+  // Toggle-Reihe 1: OV / RV / GG
   ovToggleBtn = addMedium('OV:AUS', -0.35, -2.8, () => {
     ortsvektorenVisible = !ortsvektorenVisible;
     if (onToggleOrtsvektoren) onToggleOrtsvektoren(ortsvektorenVisible);
@@ -108,8 +121,23 @@ function createPanel() {
     updateButtonLabel(ggToggleBtn, geradengleichungVisible ? 'GG:AN' : 'GG:AUS', geradengleichungVisible);
   });
 
-  // Hilfe-Toggle
-  addWide('? HILFE', 0, -3.25, () => {
+  // Toggle-Reihe 2: GL / KS
+  glToggleBtn = addMedium('GL:AN', -0.2, -3.25, () => {
+    glVisible = !glVisible;
+    if (onToggleGL) onToggleGL(glVisible);
+    updateButtonLabel(glToggleBtn, glVisible ? 'GL:AN' : 'GL:AUS', glVisible);
+  });
+  // GL startet sichtbar → grüner Button
+  glToggleBtn.material.color.setHex(0x44aa44);
+
+  ksToggleBtn = addMedium('KS:AUS', 0.2, -3.25, () => {
+    ksVisible = !ksVisible;
+    if (onToggleBodenKS) onToggleBodenKS(ksVisible);
+    updateButtonLabel(ksToggleBtn, ksVisible ? 'KS:AN' : 'KS:AUS', ksVisible);
+  });
+
+  // Hilfe
+  addWide('? HILFE', 0, -3.7, () => {
     helpVisible = !helpVisible;
     if (helpGroup) helpGroup.visible = helpVisible;
   });
@@ -146,7 +174,6 @@ function makeWideButton(label, x, y, onClick) {
 }
 
 function makeMediumButton(label, x, y, onClick) {
-  // 0.3 breit × 0.2 hoch, canvas 384×256 (1.5:1 = 0.3:0.2) für korrekte Proportionen
   const geo = new THREE.BoxGeometry(0.3, 0.2, 0.05);
   const mat = new THREE.MeshBasicMaterial({ color: 0x4444ff });
   const mesh = new THREE.Mesh(geo, mat);
@@ -260,25 +287,43 @@ function createHelpPanel() {
   leftController.add(helpGroup);
 
   const lines = [
-    '-- HILFE --',
-    'Punkt: x/y/z eingeben',
-    '→ [Punkt erzeugen]',
+    '-- HILFE Version 5 --',
     '',
-    'Gerade: [GERADE]',
-    '→ 2 Punkte mit Ray',
+    'PUNKT ERSTELLEN:',
+    'x/y/z einstellen,',
+    'dann [Punkt erzeugen]',
     '',
-    'Loeschen: [LOESCHEN]',
-    '→ Punkt mit Ray',
+    'GERADE ERSTELLEN:',
+    '[GERADE] druecken,',
+    'dann 2 Punkte mit',
+    'Controller-Ray auswaehlen',
+    '(P1 leuchtet orange)',
     '',
-    'OV / RV / GG:',
-    'Vektoren/Gleichung AN/AUS',
+    'LOESCHEN:',
+    '[P-DEL] = Punkt loeschen',
+    '  Punkt mit Ray anklicken',
+    '[G-DEL] = Gerade loeschen',
+    '  gelbe Kugel (Mittelpunkt)',
+    '  mit Ray anklicken',
+    '',
+    'EINBLENDEN / AUSBLENDEN:',
+    'OV = Ortsvektoren',
+    'RV = Richtungsvektoren',
+    '     (mit Spaltenvektor)',
+    'GG = Geradengleichung',
+    'GL = Geradenlinie',
+    'KS = Boden-Koordinaten',
+    '',
+    'TELEPORT:',
+    'Linker Controller,',
+    'Trigger gedrückt halten',
   ];
 
   let row = 0;
   for (const line of lines) {
     if (line === '') { row++; continue; }
     const sprite = makeHelpSprite(line);
-    sprite.position.set(0.45, -row * 0.38, 0);
+    sprite.position.set(0.45, -row * 0.32, 0);
     helpGroup.add(sprite);
     row++;
   }
