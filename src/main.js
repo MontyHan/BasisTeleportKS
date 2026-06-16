@@ -6,11 +6,13 @@ import { initGrid } from './core/grid.js';
 
 import { initInputUI, handleUISelection } from './core/inputUI.js';
 import { initVectorUI, setVectorFromComponents, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
-import { createPoint } from './core/geometryFactory.js';
+import { createPoint, createGerade, createRichtungsvektor } from './core/geometryFactory.js';
 
 let scene, camera, renderer;
 let rig;
 let pointCounter = 0;
+const createdPoints = [];
+let richtungsvektorGroup;
 
 init();
 animate();
@@ -58,7 +60,7 @@ function init() {
   scene.add(floor);
 
   // ✅ Versionsbeschriftung auf dem Boden
-  createVersionLabel('Version 1');
+  createVersionLabel('Version 2');
 
   // ✅ Achsen (Math-Buch Standard)
   createMathTextbookAxes(10);
@@ -71,6 +73,7 @@ function init() {
     onCreatePoint: (x, y, z) => {
       // Koordinaten-Konvertierung Mathebuch → Three.js: (x,y,z) → (y, z, x)
       const point = createPoint(scene, y, z, x, 0xff0000, 0.05);
+      createdPoints.push({ x, y, z });
 
       // Ortsvektor für diesen Punkt
       addOrtsvektorForPoint(point, x, y, z, pointCounter++);
@@ -81,8 +84,18 @@ function init() {
         pointColor: 0x00ff00
       });
     },
+    onCreateGerade: () => {
+      if (createdPoints.length < 2) return;
+      const p1 = createdPoints[createdPoints.length - 2];
+      const p2 = createdPoints[createdPoints.length - 1];
+      createGerade(scene, p1, p2);
+      createRichtungsvektor(richtungsvektorGroup, p1, p2);
+    },
     onToggleOrtsvektoren: (visible) => {
       toggleOrtsvektoren(visible);
+    },
+    onToggleRichtungsvektor: (visible) => {
+      richtungsvektorGroup.visible = visible;
     }
   });
 
@@ -96,6 +109,11 @@ function init() {
 
   // ✅ Vektor-Bildschirm / Vektor-UI
   initVectorUI(scene);
+
+  // Gruppe für alle Richtungsvektoren (initial unsichtbar)
+  richtungsvektorGroup = new THREE.Group();
+  richtungsvektorGroup.visible = false;
+  scene.add(richtungsvektorGroup);
 }
 
 /**
