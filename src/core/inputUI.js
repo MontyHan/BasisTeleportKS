@@ -16,6 +16,7 @@ let helpVisible = false;
 
 let onCreatePoint = null;
 let onGeradeMode = null;
+let onVektorMode = null;
 let onDeleteMode = null;
 let onToggleOrtsvektoren = null;
 let onToggleRichtungsvektor = null;
@@ -24,7 +25,7 @@ let onToggleGL = null;
 let onToggleBodenKS = null;
 
 let ortsvektorenVisible = false;
-let richtungsvektorVisible = false;
+let richtungsvektorVisible = true;  // RV startet sichtbar
 let geradengleichungVisible = false;
 let glVisible = true;   // Geradenlinie startet sichtbar
 let ksVisible = false;  // BodenKS startet versteckt
@@ -44,6 +45,7 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
 
   onCreatePoint             = options.onCreatePoint             ?? null;
   onGeradeMode              = options.onGeradeMode              ?? null;
+  onVektorMode              = options.onVektorMode              ?? null;
   onDeleteMode              = options.onDeleteMode              ?? null;
   onToggleOrtsvektoren      = options.onToggleOrtsvektoren      ?? null;
   onToggleRichtungsvektor   = options.onToggleRichtungsvektor   ?? null;
@@ -90,8 +92,12 @@ function createPanel() {
     if (onCreatePoint) onCreatePoint(values.x, values.y, values.z);
   });
 
-  addWide('GERADE', 0, -1.9, () => {
+  // GERADE und VEKTOR nebeneinander
+  addMedium('GERADE', -0.2, -1.9, () => {
     if (onGeradeMode) onGeradeMode();
+  });
+  addMedium('VEKTOR', 0.2, -1.9, () => {
+    if (onVektorMode) onVektorMode();
   });
 
   // LOESCHEN aufgeteilt in P-DEL und G-DEL
@@ -109,11 +115,13 @@ function createPanel() {
     updateButtonLabel(ovToggleBtn, ortsvektorenVisible ? 'OV:AN' : 'OV:AUS', ortsvektorenVisible);
   });
 
-  rvToggleBtn = addMedium('RV:AUS', 0.0, -2.8, () => {
+  // RV startet sichtbar → grün
+  rvToggleBtn = addMedium('RV:AN', 0.0, -2.8, () => {
     richtungsvektorVisible = !richtungsvektorVisible;
     if (onToggleRichtungsvektor) onToggleRichtungsvektor(richtungsvektorVisible);
     updateButtonLabel(rvToggleBtn, richtungsvektorVisible ? 'RV:AN' : 'RV:AUS', richtungsvektorVisible);
   });
+  rvToggleBtn.material.color.setHex(0x44aa44);
 
   ggToggleBtn = addMedium('GG:AUS', 0.35, -2.8, () => {
     geradengleichungVisible = !geradengleichungVisible;
@@ -287,36 +295,34 @@ function createHelpPanel() {
   leftController.add(helpGroup);
 
   const lines = [
-    '-- HILFE Version 5 --',
+    '-- HILFE Version 6 --',
     '',
     'PUNKT ERSTELLEN:',
     'x/y/z einstellen,',
     'dann [Punkt erzeugen]',
     '',
-    'GERADE ERSTELLEN:',
-    '[GERADE] druecken,',
-    'dann 2 Punkte mit',
-    'Controller-Ray auswaehlen',
+    'GERADE erstellen:',
+    '[GERADE] → 2 Punkte',
+    'mit Ray auswaehlen',
     '(P1 leuchtet orange)',
     '',
+    'VEKTOR erstellen:',
+    '[VEKTOR] → P1 dann P2',
+    'mit Ray auswaehlen',
+    '',
     'LOESCHEN:',
-    '[P-DEL] = Punkt loeschen',
-    '  Punkt mit Ray anklicken',
-    '[G-DEL] = Gerade loeschen',
-    '  gelbe Kugel (Mittelpunkt)',
-    '  mit Ray anklicken',
+    '[P-DEL] → Punkt anklicken',
+    '[G-DEL] → gelbe Kugel',
     '',
-    'EINBLENDEN / AUSBLENDEN:',
-    'OV = Ortsvektoren',
-    'RV = Richtungsvektoren',
-    '     (mit Spaltenvektor)',
-    'GG = Geradengleichung',
-    'GL = Geradenlinie',
-    'KS = Boden-Koordinaten',
+    'TOGGLE AN/AUS:',
+    'OV=Ortsvektoren',
+    'RV=Richtungsvektoren',
+    'GG=Geradengleichung',
+    'GL=Geradenlinie',
+    'KS=Boden-Koordinaten',
     '',
-    'TELEPORT:',
-    'Linker Controller,',
-    'Trigger gedrückt halten',
+    'TELEPORT: linker Ctrl,',
+    'Trigger halten',
   ];
 
   let row = 0;

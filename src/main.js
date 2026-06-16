@@ -15,9 +15,11 @@ let rightController;
 let pointCounter = 0;
 const allPointMeshes = []; // { mesh, mathCoords: {x,y,z}, originalColor }
 const allGeraden = [];     // { line, rvArrow, rvLabel, ggLabel, marker }
+const allVektoren = [];    // { arrow, label } — standalone Vektoren zwischen zwei Punkten
 
 let appMode = 'normal';
 // 'normal' | 'select-gerade-1' | 'select-gerade-2'
+// | 'select-vektor-1' | 'select-vektor-2'
 // | 'select-delete-punkt' | 'select-delete-gerade'
 let selectedP1 = null;
 
@@ -64,14 +66,14 @@ function init() {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  createVersionLabel('Version 5');
+  createVersionLabel('Version 6');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
   rightController = controllers.right;
 
   richtungsvektorGroup = new THREE.Group();
-  richtungsvektorGroup.visible = false;
+  richtungsvektorGroup.visible = true; // RV startet sichtbar
   scene.add(richtungsvektorGroup);
 
   geradengleichungGroup = new THREE.Group();
@@ -102,6 +104,16 @@ function init() {
         if (appMode !== 'normal') cancelSelection();
         appMode = 'select-gerade-1';
         setPanelStatus('Punkt 1 waehlen...', '#ffff00');
+      }
+    },
+
+    onVektorMode: () => {
+      if (appMode === 'select-vektor-1' || appMode === 'select-vektor-2') {
+        cancelSelection();
+      } else {
+        if (appMode !== 'normal') cancelSelection();
+        appMode = 'select-vektor-1';
+        setPanelStatus('Vekt. P1 waehlen...', '#ffff00');
       }
     },
 
@@ -168,6 +180,8 @@ function handlePointRaycast() {
   if (
     appMode === 'select-gerade-1' ||
     appMode === 'select-gerade-2' ||
+    appMode === 'select-vektor-1' ||
+    appMode === 'select-vektor-2' ||
     appMode === 'select-delete-punkt'
   ) {
     const meshes = allPointMeshes.map(p => p.mesh);
@@ -178,7 +192,23 @@ function handlePointRaycast() {
     const pointData = allPointMeshes.find(p => p.mesh === hitMesh);
     if (!pointData) return;
 
-    if (appMode === 'select-gerade-1') {
+    if (appMode === 'select-vektor-1') {
+      selectedP1 = pointData;
+      pointData.mesh.material.color.setHex(0xff8800);
+      appMode = 'select-vektor-2';
+      setPanelStatus('Vekt. P2 waehlen...', '#ffaa00');
+
+    } else if (appMode === 'select-vektor-2') {
+      const p1 = selectedP1.mathCoords;
+      const p2 = pointData.mathCoords;
+      const { arrow, label } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
+      allVektoren.push({ arrow, label });
+      selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
+      selectedP1 = null;
+      appMode = 'normal';
+      setPanelStatus('Bereit');
+
+    } else if (appMode === 'select-gerade-1') {
       selectedP1 = pointData;
       pointData.mesh.material.color.setHex(0xff8800);
       appMode = 'select-gerade-2';
