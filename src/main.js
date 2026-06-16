@@ -5,8 +5,8 @@ import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
 
 import { initInputUI, handleUISelection, setPanelStatus } from './core/inputUI.js';
-import { initVectorUI, setVectorFromComponents, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
-import { createPoint, createGerade, createRichtungsvektor } from './core/geometryFactory.js';
+import { initVectorUI, addOrtsvektorForPoint, toggleOrtsvektoren } from './core/vectorUI.js';
+import { createPoint, createGerade, createRichtungsvektor, createGeradengleichungLabel } from './core/geometryFactory.js';
 
 let scene, camera, renderer;
 let rig;
@@ -16,9 +16,10 @@ let pointCounter = 0;
 const allPointMeshes = []; // { mesh, mathCoords: {x,y,z}, originalColor }
 
 let appMode = 'normal'; // 'normal' | 'select-gerade-1' | 'select-gerade-2' | 'select-delete'
-let selectedP1 = null;  // { mesh, mathCoords, originalColor }
+let selectedP1 = null;
 
 let richtungsvektorGroup;
+let geradengleichungGroup;
 
 const pointRaycaster = new THREE.Raycaster();
 const pointTempMatrix = new THREE.Matrix4();
@@ -57,54 +58,48 @@ function init() {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  createVersionLabel('Version 3');
+  createVersionLabel('Version 4');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
   rightController = controllers.right;
 
-  // Gruppe für Richtungsvektoren (initial unsichtbar)
   richtungsvektorGroup = new THREE.Group();
   richtungsvektorGroup.visible = false;
   scene.add(richtungsvektorGroup);
+
+  geradengleichungGroup = new THREE.Group();
+  geradengleichungGroup.visible = false;
+  scene.add(geradengleichungGroup);
 
   initVectorUI(scene);
 
   initInputUI(scene, camera, rig, controllers.left, controllers.right, {
     onCreatePoint: (x, y, z) => {
-      // Koordinaten-Konvertierung Mathebuch → Three.js: (x,y,z) → (y,z,x)
+      // Mathebuch → Three.js: (x,y,z) → (y,z,x)
       const mesh = createPoint(scene, y, z, x, 0xff0000, 0.05);
       allPointMeshes.push({ mesh, mathCoords: { x, y, z }, originalColor: 0xff0000 });
-
       addOrtsvektorForPoint(mesh, x, y, z, pointCounter++);
-
-      setVectorFromComponents(x, y, z, { lineColor: 0x00ffcc, pointColor: 0x00ff00 });
     },
 
     onGeradeMode: () => {
-      // Toggle: erneuter Druck bricht ab
       if (appMode === 'select-gerade-1' || appMode === 'select-gerade-2') {
         cancelSelection();
-        return;
+      } else {
+        if (appMode !== 'normal') cancelSelection();
+        appMode = 'select-gerade-1';
+        setPanelStatus('Punkt 1 waehlen...', '#ffff00');
       }
-      // Laufenden Lösch-Modus abbrechen
-      if (appMode === 'select-delete') cancelSelection();
-
-      appMode = 'select-gerade-1';
-      setPanelStatus('Punkt 1 waehlen...', '#ffff00');
     },
 
     onDeleteMode: () => {
-      // Toggle: erneuter Druck bricht ab
       if (appMode === 'select-delete') {
         cancelSelection();
-        return;
+      } else {
+        if (appMode !== 'normal') cancelSelection();
+        appMode = 'select-delete';
+        setPanelStatus('Punkt loeschen...', '#ff6666');
       }
-      // Laufende Gerade-Auswahl abbrechen
-      if (appMode !== 'normal') cancelSelection();
-
-      appMode = 'select-delete';
-      setPanelStatus('Punkt loeschen...', '#ff6666');
     },
 
     onToggleOrtsvektoren: (visible) => {
@@ -113,10 +108,13 @@ function init() {
 
     onToggleRichtungsvektor: (visible) => {
       richtungsvektorGroup.visible = visible;
+    },
+
+    onToggleGeradengleichung: (visible) => {
+      geradengleichungGroup.visible = visible;
     }
   });
 
-  // Rechter Controller: erst UI-Buttons prüfen, dann Punkt-Raycast
   controllers.right.addEventListener('selectstart', () => {
     const hitUI = handleUISelection();
     if (!hitUI && appMode !== 'normal') {
@@ -145,7 +143,7 @@ function handlePointRaycast() {
 
   if (appMode === 'select-gerade-1') {
     selectedP1 = pointData;
-    pointData.mesh.material.color.setHex(0xff8800); // Orange = ausgewählt
+    pointData.mesh.material.color.setHex(0xff8800);
     appMode = 'select-gerade-2';
     setPanelStatus('Punkt 2 waehlen...', '#ffaa00');
 
@@ -154,17 +152,16 @@ function handlePointRaycast() {
     const p2 = pointData.mathCoords;
     createGerade(scene, p1, p2);
     createRichtungsvektor(richtungsvektorGroup, p1, p2);
-    // Farbe von Punkt 1 zurücksetzen
+    const ggLabel = createGeradengleichungLabel(p1, p2);
+    geradengleichungGroup.add(ggLabel);
     selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
     selectedP1 = null;
     appMode = 'normal';
     setPanelStatus('Bereit');
 
   } else if (appMode === 'select-delete') {
-    // Ortsvektor entfernen falls vorhanden
     if (pointData.mesh.userData.ortsvektor) {
-      const ov = pointData.mesh.userData.ortsvektor;
-      ov.parent?.remove(ov);
+      pointData.mesh.userData.ortsvektor.parent?.remove(pointData.mesh.userData.ortsvektor);
     }
     scene.remove(pointData.mesh);
     allPointMeshes.splice(allPointMeshes.indexOf(pointData), 1);
@@ -185,16 +182,16 @@ function cancelSelection() {
 function createMathTextbookAxes(length) {
   const axesGroup = new THREE.Group();
 
-  const xGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,length)]);
-  axesGroup.add(new THREE.Line(xGeometry, new THREE.LineBasicMaterial({ color: 0xff0000 })));
+  const xGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,length)]);
+  axesGroup.add(new THREE.Line(xGeo, new THREE.LineBasicMaterial({ color: 0xff0000 })));
   axesGroup.add(new THREE.ArrowHelper(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,0), length, 0xff0000, length*0.2, length*0.1));
 
-  const yGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(length,0,0)]);
-  axesGroup.add(new THREE.Line(yGeometry, new THREE.LineBasicMaterial({ color: 0x00ff00 })));
+  const yGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(length,0,0)]);
+  axesGroup.add(new THREE.Line(yGeo, new THREE.LineBasicMaterial({ color: 0x00ff00 })));
   axesGroup.add(new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), length, 0x00ff00, length*0.2, length*0.1));
 
-  const zGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,length,0)]);
-  axesGroup.add(new THREE.Line(zGeometry, new THREE.LineBasicMaterial({ color: 0x0000ff })));
+  const zGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,length,0)]);
+  axesGroup.add(new THREE.Line(zGeo, new THREE.LineBasicMaterial({ color: 0x0000ff })));
   axesGroup.add(new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), length, 0x0000ff, length*0.2, length*0.1));
 
   const labelGroup = new THREE.Group();
