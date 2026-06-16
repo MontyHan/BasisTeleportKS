@@ -33,6 +33,7 @@ function createPanel() {
   // Panel am linken Controller befestigt: leicht nach oben und vor dem Controller
   panelRoot.position.set(0, 0.1, -0.3);
   panelRoot.rotation.x = -Math.PI / 8;
+  panelRoot.scale.set(0.15, 0.15, 0.15);
   leftController.add(panelRoot);
 
   createRow(panelRoot, 'x', 0);
