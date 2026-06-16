@@ -57,6 +57,9 @@ function init() {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
+  // ✅ Versionsbeschriftung auf dem Boden
+  createVersionLabel('Version 1');
+
   // ✅ Achsen (Math-Buch Standard)
   createMathTextbookAxes(10);
 
@@ -202,6 +205,31 @@ function addAxisLabel(text, position, group) {
   sprite.scale.set(0.5, 0.5, 1);
   
   group.add(sprite);
+}
+
+function createVersionLabel(version) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.font = 'bold 64px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(version, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), material);
+
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(0, 0.01, 3);
+
+  scene.add(mesh);
 }
 
 function animate() {
