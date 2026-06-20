@@ -5,7 +5,7 @@ import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
 
 import {
-  initInputUI, handleUISelection, setPanelStatus, setPanelVisible,
+  initInputUI, handleUISelection, setPanelStatus,
   getLambdaValue, getInputValues
 } from './core/inputUI.js';
 import {
@@ -40,10 +40,6 @@ let geradengleichungGroup;
 let geradenLinienGroup;
 let bodenKSGroup;
 
-// AR state
-let isARMode = false;
-let floorMesh, versionLabelMesh;
-
 // Shared toggle state
 let ovVisible  = false;
 let rvVisible  = true;
@@ -51,12 +47,6 @@ let ggVisible  = false;
 let glVisible  = true;
 let ksVisible  = false;
 let koVisible  = false;
-
-// AR panel state
-const arValues = { x: 0, y: 0, z: 0 };
-let arLambdaValue   = 0;
-let arDeleteAllPending = false;
-let arDeleteAllTimer   = null;
 
 const pointRaycaster  = new THREE.Raycaster();
 const pointTempMatrix = new THREE.Matrix4();
@@ -75,46 +65,13 @@ function init() {
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
   rig.add(camera);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local-floor');
   document.body.appendChild(renderer.domElement);
 
   initXR(renderer);
-
-  renderer.xr.addEventListener('sessionstart', () => {
-    const session = renderer.xr.getSession();
-    const blendMode = session.environmentBlendMode;
-    if (blendMode === 'alpha-blend' || blendMode === 'additive') {
-      isARMode = true;
-      scene.background = null;
-      if (floorMesh) floorMesh.visible = false;
-      if (versionLabelMesh) versionLabelMesh.visible = false;
-      const overlay = document.getElementById('ar-overlay');
-      if (overlay) overlay.style.display = 'block';
-      // Only hide the 3D panel when there are no hand controllers (iPad AR).
-      // VR headsets with passthrough (e.g. Quest 3) have tracked-pointer sources
-      // and should keep the 3D panel.
-      setTimeout(() => {
-        if (!isARMode) return;
-        const hasHandCtrl = [...(session.inputSources || [])]
-          .some(s => s.targetRayMode === 'tracked-pointer');
-        if (!hasHandCtrl) setPanelVisible(false);
-      }, 800);
-    }
-  });
-
-  renderer.xr.addEventListener('sessionend', () => {
-    if (isARMode) {
-      isARMode = false;
-      scene.background = new THREE.Color(0x202040);
-      if (floorMesh) floorMesh.visible = true;
-      if (versionLabelMesh) versionLabelMesh.visible = true;
-      setPanelVisible(true);
-      const overlay = document.getElementById('ar-overlay');
-      if (overlay) overlay.style.display = 'none';
-    }
-  });
 
   initGrid(scene);
 
@@ -124,14 +81,14 @@ function init() {
   dirLight.position.set(3, 6, 4);
   scene.add(dirLight);
 
-  floorMesh = new THREE.Mesh(
+  const floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
     new THREE.MeshStandardMaterial({ color: 0x334466, transparent: true, opacity: 0.18, side: THREE.DoubleSide })
   );
   floorMesh.rotation.x = -Math.PI / 2;
   scene.add(floorMesh);
 
-  versionLabelMesh = createVersionLabel('Version 10');
+  createVersionLabel('Version 12');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
@@ -234,11 +191,6 @@ function init() {
     if (!hitUI && appMode !== 'normal') handleRaycast(rightController);
   });
 
-  controllers.left.addEventListener('selectstart', () => {
-    if (isARMode && appMode !== 'normal') handleRaycast(leftController);
-  });
-
-  setupARPanel();
   initTeleport(renderer, scene, rig);
 }
 
@@ -563,7 +515,7 @@ function handleRaycast(ctrl) {
       setPanelStatus('Bereit');
 
     } else if (appMode === 'select-param-gerade') {
-      const lambda = isARMode ? arLambdaValue : getLambdaValue();
+      const lambda = getLambdaValue();
       const OV = geradeData.p1Math;
       const RV = { x: geradeData.p2Math.x - OV.x, y: geradeData.p2Math.y - OV.y, z: geradeData.p2Math.z - OV.z };
       addFullPoint(OV.x + lambda * RV.x, OV.y + lambda * RV.y, OV.z + lambda * RV.z, 0x44aaff);
@@ -665,162 +617,6 @@ function cancelSelection() {
   clearWinkelMarkers();
   appMode = 'normal';
   setPanelStatus('Bereit');
-}
-
-// ===== AR Panel wiring =====
-
-function setupARPanel() {
-  function arBtn(id) { return document.getElementById(id); }
-
-  for (const ax of ['x', 'y', 'z']) {
-    arBtn(`ar-${ax}-m`)?.addEventListener('click', () => {
-      arValues[ax] -= 1;
-      document.getElementById(`ar-${ax}-v`).textContent = arValues[ax];
-    });
-    arBtn(`ar-${ax}-p`)?.addEventListener('click', () => {
-      arValues[ax] += 1;
-      document.getElementById(`ar-${ax}-v`).textContent = arValues[ax];
-    });
-  }
-
-  arBtn('ar-lam-m')?.addEventListener('click', () => {
-    arLambdaValue -= 1;
-    document.getElementById('ar-lam-v').textContent = arLambdaValue;
-  });
-  arBtn('ar-lam-p')?.addEventListener('click', () => {
-    arLambdaValue += 1;
-    document.getElementById('ar-lam-v').textContent = arLambdaValue;
-  });
-
-  arBtn('ar-punkt')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    addFullPoint(arValues.x, arValues.y, arValues.z, 0xff0000);
-  });
-  arBtn('ar-gerade')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-gerade-1' || appMode === 'select-gerade-2') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-gerade-1';
-    setPanelStatus('Punkt 1 antippen...', '#ffff00');
-  });
-  arBtn('ar-vektor')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-vektor-1' || appMode === 'select-vektor-2') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-vektor-1';
-    setPanelStatus('Vekt. P1 antippen...', '#ffff00');
-  });
-  arBtn('ar-param')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-param-gerade') { cancelSelection(); return; }
-    if (allGeraden.length === 0) { setPanelStatus('Erst Gerade!', '#ff4444'); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-param-gerade';
-    allGeraden.forEach(g => { g.marker.visible = true; });
-    setPanelStatus('Gerade antippen...', '#88ffff');
-  });
-  arBtn('ar-laenge')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-vector-length') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    enterLaengeMode();
-  });
-  arBtn('ar-winkel')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-winkel-1' || appMode === 'select-winkel-2') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    enterWinkelMode();
-  });
-  arBtn('ar-schnitt')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-schnitt-1' || appMode === 'select-schnitt-2') { cancelSelection(); return; }
-    if (allGeraden.length < 2) { setPanelStatus('Mind. 2 Geraden!', '#ff4444'); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-schnitt-1';
-    allGeraden.forEach(g => { g.marker.visible = true; });
-    setPanelStatus('Gerade 1 antippen...', '#88ffff');
-  });
-  arBtn('ar-undo')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    undoLast();
-  });
-  arBtn('ar-pdel')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-delete-punkt') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-delete-punkt';
-    setPanelStatus('Punkt antippen...', '#ff6666');
-  });
-  arBtn('ar-gdel')?.addEventListener('click', () => {
-    arCancelDeleteAll();
-    if (appMode === 'select-delete-gerade') { cancelSelection(); return; }
-    if (appMode !== 'normal') cancelSelection();
-    appMode = 'select-delete-gerade';
-    allGeraden.forEach(g => { g.marker.visible = true; });
-    setPanelStatus('Gerade antippen...', '#ff6666');
-  });
-  arBtn('ar-alles')?.addEventListener('click', () => {
-    if (!arDeleteAllPending) {
-      arDeleteAllPending = true;
-      setPanelStatus('Sicher? Nochmal!', '#ff8800');
-      arDeleteAllTimer = setTimeout(() => {
-        arDeleteAllPending = false;
-        setPanelStatus('Bereit');
-      }, 5000);
-    } else {
-      clearTimeout(arDeleteAllTimer);
-      arDeleteAllPending = false;
-      deleteAllObjects();
-      setPanelStatus('Alles geloescht!', '#ff4444');
-      setTimeout(() => setPanelStatus('Bereit'), 2000);
-    }
-  });
-
-  // Toggles
-  arBtn('ar-ov')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    ovVisible = !ovVisible; toggleOrtsvektoren(ovVisible);
-    e.target.textContent = ovVisible ? 'OV:AN' : 'OV:AUS';
-    e.target.className = ovVisible ? 'tog-on' : 'tog-off';
-  });
-  arBtn('ar-rv')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    rvVisible = !rvVisible; richtungsvektorGroup.visible = rvVisible;
-    e.target.textContent = rvVisible ? 'RV:AN' : 'RV:AUS';
-    e.target.className = rvVisible ? 'tog-on' : 'tog-off';
-  });
-  arBtn('ar-gg')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    ggVisible = !ggVisible; geradengleichungGroup.visible = ggVisible;
-    e.target.textContent = ggVisible ? 'GG:AN' : 'GG:AUS';
-    e.target.className = ggVisible ? 'tog-on' : 'tog-off';
-  });
-  arBtn('ar-gl')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    glVisible = !glVisible; geradenLinienGroup.visible = glVisible;
-    e.target.textContent = glVisible ? 'GL:AN' : 'GL:AUS';
-    e.target.className = glVisible ? 'tog-on' : 'tog-off';
-  });
-  arBtn('ar-ks')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    ksVisible = !ksVisible; bodenKSGroup.visible = ksVisible;
-    e.target.textContent = ksVisible ? 'KS:AN' : 'KS:AUS';
-    e.target.className = ksVisible ? 'tog-on' : 'tog-off';
-  });
-  arBtn('ar-ko')?.addEventListener('click', (e) => {
-    arCancelDeleteAll();
-    koVisible = !koVisible; toggleKoordinaten(koVisible);
-    e.target.textContent = koVisible ? 'KO:AN' : 'KO:AUS';
-    e.target.className = koVisible ? 'tog-on' : 'tog-off';
-  });
-}
-
-function arCancelDeleteAll() {
-  if (arDeleteAllPending) {
-    clearTimeout(arDeleteAllTimer);
-    arDeleteAllPending = false;
-    setPanelStatus('Bereit');
-  }
 }
 
 // ===== Scene helpers =====

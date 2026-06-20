@@ -87,8 +87,6 @@ export function setPanelStatus(text, color = 'white') {
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
     statusSprite.material.map.needsUpdate = true;
   }
-  const arStatus = document.getElementById('ar-status');
-  if (arStatus) { arStatus.textContent = text; arStatus.style.color = color; }
 }
 
 export function setPanelVisible(visible) {
