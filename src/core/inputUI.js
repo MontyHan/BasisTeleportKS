@@ -22,6 +22,7 @@ let onVektorMode = null;
 let onParamMode = null;
 let onLaengeMode = null;
 let onDeleteMode = null;
+let onDeleteAll = null;
 let onToggleOrtsvektoren = null;
 let onToggleRichtungsvektor = null;
 let onToggleGeradengleichung = null;
@@ -40,6 +41,9 @@ let ggToggleBtn = null;
 let glToggleBtn = null;
 let ksToggleBtn = null;
 
+let deleteAllPending = false;
+let deleteAllTimer = null;
+
 export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   scene = s; camera = cam; rig = r;
   leftController = lCtrl; rightController = rCtrl;
@@ -50,6 +54,7 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   onParamMode              = options.onParamMode              ?? null;
   onLaengeMode             = options.onLaengeMode             ?? null;
   onDeleteMode             = options.onDeleteMode             ?? null;
+  onDeleteAll              = options.onDeleteAll              ?? null;
   onToggleOrtsvektoren     = options.onToggleOrtsvektoren     ?? null;
   onToggleRichtungsvektor  = options.onToggleRichtungsvektor  ?? null;
   onToggleGeradengleichung = options.onToggleGeradengleichung ?? null;
@@ -61,16 +66,31 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
 }
 
 export function setPanelStatus(text, color = 'white') {
-  if (!statusSprite?.material?.map?.image) return;
-  const canvas = statusSprite.material.map.image;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = color;
-  ctx.font = 'bold 46px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-  statusSprite.material.map.needsUpdate = true;
+  if (statusSprite?.material?.map?.image) {
+    const canvas = statusSprite.material.map.image;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = color;
+    ctx.font = 'bold 55px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    statusSprite.material.map.needsUpdate = true;
+  }
+  // Also update AR status div when visible
+  const arStatus = document.getElementById('ar-status');
+  if (arStatus) {
+    arStatus.textContent = text;
+    arStatus.style.color = color;
+  }
+}
+
+export function setPanelVisible(visible) {
+  if (panelRoot) panelRoot.visible = visible;
+  if (helpGroup) {
+    if (!visible) helpGroup.userData.wasVisible = helpGroup.visible;
+    helpGroup.visible = visible ? (helpGroup.userData.wasVisible ?? false) : false;
+  }
 }
 
 export function getLambdaValue() { return lambdaValue; }
@@ -85,51 +105,75 @@ function createPanel() {
   panelRoot.scale.set(0.15, 0.15, 0.15);
   leftController.add(panelRoot);
 
-  // HILFE ganz oben
   addWide('? HILFE', 0, 0, () => {
     helpVisible = !helpVisible;
-    if (helpGroup) helpGroup.visible = helpVisible;
+    if (helpGroup) {
+      helpGroup.visible = helpVisible;
+      helpGroup.userData.wasVisible = helpVisible;
+    }
   });
 
-  // x / y / z Reihen (enger, Abstand 0.3)
   createRow(panelRoot, 'x', -0.3);
   createRow(panelRoot, 'y', -0.6);
   createRow(panelRoot, 'z', -0.9);
 
-  // Status-Sprite
-  statusSprite = makeTextSprite('Bereit', 46);
+  statusSprite = makeTextSprite('Bereit', 55);
   statusSprite.position.set(0, -1.1, 0);
   statusSprite.scale.set(0.9, 0.3, 1);
   panelRoot.add(statusSprite);
 
-  // ---- Reihe ERZEUGEN ----
+  // ---- ERZEUGEN ----
   makeRowLabel('ERZEUGEN', -0.38, -1.4);
   addNarrow('PUNKT', 0.0, -1.4, () => {
+    cancelDeleteAll();
     if (onCreatePoint) onCreatePoint(values.x, values.y, values.z);
   });
   addNarrow('VEKTOR', 0.24, -1.4, () => {
+    cancelDeleteAll();
     if (onVektorMode) onVektorMode();
   });
   addNarrow('GERADE', 0.48, -1.4, () => {
+    cancelDeleteAll();
     if (onGeradeMode) onGeradeMode();
   });
 
-  // ---- Reihe LOESCHEN ----
+  // ---- LOESCHEN ----
   makeRowLabel('LOESCHEN', -0.38, -1.65);
-  addNarrow('P-DEL', 0.08, -1.65, () => {
+  addNarrow('P-DEL', 0.0, -1.65, () => {
+    cancelDeleteAll();
     if (onDeleteMode) onDeleteMode('punkt');
   });
-  addNarrow('G-DEL', 0.36, -1.65, () => {
+  addNarrow('G-DEL', 0.24, -1.65, () => {
+    cancelDeleteAll();
     if (onDeleteMode) onDeleteMode('gerade');
   });
+  const allDelBtn = addNarrow('ALLES', 0.48, -1.65, () => {
+    if (!deleteAllPending) {
+      deleteAllPending = true;
+      setPanelStatus('Sicher? Nochmal!', '#ff8800');
+      deleteAllTimer = setTimeout(() => {
+        deleteAllPending = false;
+        setPanelStatus('Bereit');
+      }, 5000);
+    } else {
+      clearTimeout(deleteAllTimer);
+      deleteAllPending = false;
+      if (onDeleteAll) onDeleteAll();
+      setPanelStatus('Alles geloescht!', '#ff4444');
+      setTimeout(() => setPanelStatus('Bereit'), 2000);
+    }
+  });
+  allDelBtn.material.color.setHex(0x883322);
 
-  // ---- Reihe 5 Toggles ----
+  // ---- 5 Toggles ----
   ovToggleBtn = addNarrow('OV:AUS', -0.44, -1.9, () => {
+    cancelDeleteAll();
     ortsvektorenVisible = !ortsvektorenVisible;
     if (onToggleOrtsvektoren) onToggleOrtsvektoren(ortsvektorenVisible);
     updateButtonLabel(ovToggleBtn, ortsvektorenVisible ? 'OV:AN' : 'OV:AUS', ortsvektorenVisible);
   });
   rvToggleBtn = addNarrow('RV:AN', -0.22, -1.9, () => {
+    cancelDeleteAll();
     richtungsvektorVisible = !richtungsvektorVisible;
     if (onToggleRichtungsvektor) onToggleRichtungsvektor(richtungsvektorVisible);
     updateButtonLabel(rvToggleBtn, richtungsvektorVisible ? 'RV:AN' : 'RV:AUS', richtungsvektorVisible);
@@ -137,11 +181,13 @@ function createPanel() {
   rvToggleBtn.material.color.setHex(0x44aa44);
 
   ggToggleBtn = addNarrow('GG:AUS', 0.0, -1.9, () => {
+    cancelDeleteAll();
     geradengleichungVisible = !geradengleichungVisible;
     if (onToggleGeradengleichung) onToggleGeradengleichung(geradengleichungVisible);
     updateButtonLabel(ggToggleBtn, geradengleichungVisible ? 'GG:AN' : 'GG:AUS', geradengleichungVisible);
   });
   glToggleBtn = addNarrow('GL:AN', 0.22, -1.9, () => {
+    cancelDeleteAll();
     glVisible = !glVisible;
     if (onToggleGL) onToggleGL(glVisible);
     updateButtonLabel(glToggleBtn, glVisible ? 'GL:AN' : 'GL:AUS', glVisible);
@@ -149,21 +195,32 @@ function createPanel() {
   glToggleBtn.material.color.setHex(0x44aa44);
 
   ksToggleBtn = addNarrow('KS:AUS', 0.44, -1.9, () => {
+    cancelDeleteAll();
     ksVisible = !ksVisible;
     if (onToggleBodenKS) onToggleBodenKS(ksVisible);
     updateButtonLabel(ksToggleBtn, ksVisible ? 'KS:AN' : 'KS:AUS', ksVisible);
   });
 
-  // ---- λ-Eingabe Reihe ----
+  // ---- λ-Reihe ----
   createLambdaRow(panelRoot, -2.15);
 
   // ---- PARAM + LAENGE ----
   addMedium('PARAM', -0.12, -2.4, () => {
+    cancelDeleteAll();
     if (onParamMode) onParamMode();
   });
   addMedium('LAENGE', 0.22, -2.4, () => {
+    cancelDeleteAll();
     if (onLaengeMode) onLaengeMode();
   });
+}
+
+function cancelDeleteAll() {
+  if (deleteAllPending) {
+    clearTimeout(deleteAllTimer);
+    deleteAllPending = false;
+    setPanelStatus('Bereit');
+  }
 }
 
 // ===== Button-Typen =====
@@ -172,12 +229,10 @@ function addWide(label, x, y, onClick) {
   const btn = makeWideButton(label, x, y, onClick);
   panelRoot.add(btn); buttons.push(btn); return btn;
 }
-
 function addMedium(label, x, y, onClick) {
   const btn = makeMediumButton(label, x, y, onClick);
   panelRoot.add(btn); buttons.push(btn); return btn;
 }
-
 function addNarrow(label, x, y, onClick) {
   const btn = makeNarrowButton(label, x, y, onClick);
   panelRoot.add(btn); buttons.push(btn); return btn;
@@ -190,28 +245,27 @@ function makeWideButton(label, x, y, onClick) {
   );
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 56;
-  const spr = makeTextSprite(label, 56);
+  mesh.userData.fontSize = 67;
+  const spr = makeTextSprite(label, 67);
   spr.position.set(0, 0, 0.06); spr.scale.set(0.4, 0.2, 1);
   mesh.add(spr);
   return mesh;
 }
 
 function makeMediumButton(label, x, y, onClick) {
-  // 0.3 × 0.18 ; canvas 384×230 → ratio 1.67 ≈ 0.3/0.18 ✓
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.18, 0.05),
     new THREE.MeshBasicMaterial({ color: 0x4444ff })
   );
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 50;
+  mesh.userData.fontSize = 60;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 384; canvas.height = 230;
   ctx.clearRect(0, 0, 384, 230);
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 50px Arial';
+  ctx.font = 'bold 60px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, 192, 115);
   const texture = new THREE.CanvasTexture(canvas);
@@ -223,20 +277,19 @@ function makeMediumButton(label, x, y, onClick) {
 }
 
 function makeNarrowButton(label, x, y, onClick) {
-  // 0.2 × 0.15 ; canvas 256×192 → ratio 1.333 = 0.2/0.15 ✓
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.2, 0.15, 0.05),
     new THREE.MeshBasicMaterial({ color: 0x4444ff })
   );
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 38;
+  mesh.userData.fontSize = 46;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 256; canvas.height = 192;
   ctx.clearRect(0, 0, 256, 192);
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 38px Arial';
+  ctx.font = 'bold 46px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, 128, 96);
   const texture = new THREE.CanvasTexture(canvas);
@@ -248,20 +301,19 @@ function makeNarrowButton(label, x, y, onClick) {
 }
 
 function makeSmallButton(label, x, y, onClick) {
-  // Quadrat 0.2×0.2 ; canvas 256×256
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.2, 0.2, 0.05),
     new THREE.MeshBasicMaterial({ color: 0x4444ff })
   );
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 80;
+  mesh.userData.fontSize = 96;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 256; canvas.height = 256;
   ctx.clearRect(0, 0, 256, 256);
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 80px Arial';
+  ctx.font = 'bold 96px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, 128, 128);
   const texture = new THREE.CanvasTexture(canvas);
@@ -277,7 +329,7 @@ function updateButtonLabel(btn, label, active) {
   btn.material.color.setHex(active ? 0x44aa44 : 0x4444ff);
   const sprite = btn.children[0];
   if (!sprite?.material?.map?.image) return;
-  const fs = btn.userData.fontSize || 56;
+  const fs = btn.userData.fontSize || 67;
   const canvas = sprite.material.map.image;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -288,20 +340,18 @@ function updateButtonLabel(btn, label, active) {
   sprite.material.map.needsUpdate = true;
 }
 
-// Text-Label ohne Geometrie (für ERZEUGEN / LOESCHEN)
 function makeRowLabel(text, x, y) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 384; canvas.height = 128;
   ctx.clearRect(0, 0, 384, 128);
   ctx.fillStyle = 'rgba(200,220,255,1)';
-  ctx.font = 'bold 38px Arial';
+  ctx.font = 'bold 46px Arial';
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   ctx.fillText(text, 374, 64);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-  // Canvas 384/128 = 3:1 → sprite 0.33×0.11
   spr.position.set(x, y, 0);
   spr.scale.set(0.33, 0.11, 1);
   panelRoot.add(spr);
@@ -312,7 +362,7 @@ function makeRowLabel(text, x, y) {
 function createRow(parent, axis, y) {
   const text = makeTextSprite(`${axis}: 0`);
   text.position.set(-0.5, y, 0);
-  text.scale.set(0.6, 0.27, 1); // etwas kompakter
+  text.scale.set(0.6, 0.27, 1);
   parent.add(text);
   textSprites[axis] = text;
 
@@ -356,13 +406,13 @@ function updateLambdaSprite() {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 56px Arial';
+  ctx.font = 'bold 67px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(`λ: ${lambdaValue}`, canvas.width / 2, canvas.height / 2);
   lambdaSprite.material.map.needsUpdate = true;
 }
 
-function makeTextSprite(text, fontSize = 56) {
+function makeTextSprite(text, fontSize = 67) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 512; canvas.height = 256;
@@ -383,34 +433,35 @@ function makeTextSprite(text, fontSize = 56) {
 function createHelpPanel() {
   helpGroup = new THREE.Group();
   helpGroup.visible = false;
+  helpGroup.userData.wasVisible = false;
   helpGroup.position.set(0.7, 0.18, -0.25);
   helpGroup.rotation.x = -Math.PI / 8;
   helpGroup.scale.set(0.15, 0.15, 0.15);
   leftController.add(helpGroup);
 
   const lines = [
-    '--- HILFE V8 ---',
+    '--- HILFE V9 ---',
     '',
-    'PUNKT: x/y/z, dann [PUNKT]',
-    'VEKTOR: [VEKTOR] P1→P2',
-    'GERADE: [GERADE] P1→P2',
+    'PUNKT: x/y/z einstellen,',
+    'dann [PUNKT] drücken',
+    '→ Punkte: A, B, C, ...',
+    'VEKTOR: [VEKTOR] P1 → P2',
+    'GERADE: [GERADE] P1 → P2',
     '',
     'PARAM: λ einstellen,',
-    '[PARAM] → Gerade anklicken',
-    '→ Punkt auf Gerade (blau)',
+    '[PARAM] → Gerade wählen',
+    '→ neuer Punkt auf Gerade',
     '',
     'LAENGE: [LAENGE] drücken,',
-    'Vektorspitze anklicken',
+    'gelbe Kugel anklicken',
     '',
     'LOESCHEN:',
     '[P-DEL] Punkt anklicken',
     '[G-DEL] gelbe Kugel',
+    '[ALLES] 2× drücken!',
     '',
-    'TOGGLE:',
-    'OV RV GG GL KS',
-    '',
-    'TELEPORT: linker Ctrl',
-    'Trigger gedrückt halten',
+    'TOGGLE: OV RV GG GL KS',
+    'TELEPORT: linker Ctrl halten',
   ];
 
   let row = 0;
@@ -429,13 +480,13 @@ function makeHelpSprite(text) {
   canvas.width = 700; canvas.height = 112;
   ctx.clearRect(0, 0, 700, 112);
   ctx.fillStyle = 'rgba(180,220,255,1)';
-  ctx.font = 'bold 42px Arial';
+  ctx.font = 'bold 50px Arial';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillText(text, 12, 56);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-  sprite.scale.set(1.875, 0.3, 1); // 700/112 × 0.3 = 1.875 ✓
+  sprite.scale.set(1.875, 0.3, 1);
   return sprite;
 }
 
