@@ -90,9 +90,17 @@ function init() {
       scene.background = null;
       if (floorMesh) floorMesh.visible = false;
       if (versionLabelMesh) versionLabelMesh.visible = false;
-      setPanelVisible(false);
       const overlay = document.getElementById('ar-overlay');
       if (overlay) overlay.style.display = 'block';
+      // Only hide the 3D panel when there are no hand controllers (iPad AR).
+      // VR headsets with passthrough (e.g. Quest 3) have tracked-pointer sources
+      // and should keep the 3D panel.
+      setTimeout(() => {
+        if (!isARMode) return;
+        const hasHandCtrl = [...(session.inputSources || [])]
+          .some(s => s.targetRayMode === 'tracked-pointer');
+        if (!hasHandCtrl) setPanelVisible(false);
+      }, 800);
     }
   });
 
