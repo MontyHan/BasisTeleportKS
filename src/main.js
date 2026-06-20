@@ -135,7 +135,8 @@ function init() {
       if (appMode !== 'normal') cancelSelection();
       appMode = 'select-param-gerade';
       allGeraden.forEach(g => { g.marker.visible = true; });
-      setPanelStatus('Gerade waehlen.', '#88ffff');
+      const lam = getLambdaValue();
+      setPanelStatus(`λ=${lam}: Gerade wählen`, '#88ffff');
     },
 
     onLaengeMode: () => {

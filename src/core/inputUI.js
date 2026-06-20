@@ -214,14 +214,10 @@ function createPanel() {
   // ---- λ-Reihe ----
   createLambdaRow(panelRoot, -2.15);
 
-  // ---- UNDO + PARAM + LAENGE ----
-  addMedium('UNDO', -0.46, -2.4, () => {
+  // ---- UNDO + LAENGE (λ bestätigen ist jetzt in der λ-Zeile) ----
+  addMedium('UNDO', -0.22, -2.4, () => {
     cancelDeleteAll();
     if (onUndoLast) onUndoLast();
-  });
-  addMedium('PARAM', -0.12, -2.4, () => {
-    cancelDeleteAll();
-    if (onParamMode) onParamMode();
   });
   addMedium('LAENGE', 0.22, -2.4, () => {
     cancelDeleteAll();
@@ -277,20 +273,20 @@ function makeWideButton(label, x, y, onClick) {
   return mesh;
 }
 
-function makeMediumButton(label, x, y, onClick) {
+function makeMediumButton(label, x, y, onClick, fontSize = 60) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.18, 0.05),
     new THREE.MeshBasicMaterial({ color: 0x4444ff })
   );
   mesh.position.set(x, y, 0);
   mesh.userData.onClick = onClick;
-  mesh.userData.fontSize = 60;
+  mesh.userData.fontSize = fontSize;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 384; canvas.height = 230;
   ctx.clearRect(0, 0, 384, 230);
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 60px Arial';
+  ctx.font = `bold ${fontSize}px Arial`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, 192, 115);
   const texture = new THREE.CanvasTexture(canvas);
@@ -416,13 +412,23 @@ function updateText() {
 function createLambdaRow(parent, y) {
   lambdaSprite = makeTextSprite('λ: 0');
   lambdaSprite.position.set(-0.5, y, 0);
-  lambdaSprite.scale.set(0.6, 0.27, 1);
+  lambdaSprite.scale.set(0.4, 0.27, 1);
   parent.add(lambdaSprite);
 
-  const minus = makeSmallButton('-', 0.2, y, () => { lambdaValue -= 1; updateLambdaSprite(); });
-  const plus  = makeSmallButton('+', 0.45, y, () => { lambdaValue += 1; updateLambdaSprite(); });
+  // Minus/Plus etwas nach links gerückt, damit λ bestätigen Platz hat
+  const minus = makeSmallButton('-', -0.1, y, () => { lambdaValue -= 1; updateLambdaSprite(); });
+  const plus  = makeSmallButton('+', 0.12, y, () => { lambdaValue += 1; updateLambdaSprite(); });
   parent.add(minus, plus);
   buttons.push(minus, plus);
+
+  // λ bestätigen – löst den PARAM-Modus aus
+  const confirmBtn = makeMediumButton('λ bestätigen', 0.4, y, () => {
+    cancelDeleteAll();
+    if (onParamMode) onParamMode();
+  }, 40);
+  confirmBtn.material.color.setHex(0x225588);
+  parent.add(confirmBtn);
+  buttons.push(confirmBtn);
 }
 
 function updateLambdaSprite() {
@@ -465,15 +471,17 @@ function createHelpPanel() {
   leftController.add(helpGroup);
 
   const lines = [
-    '--- HILFE V10 ---',
+    '--- HILFE V12 ---',
     '',
     'PUNKT: x/y/z → [PUNKT]',
     '→ Punkte: A, B, C, ...',
     'VEKTOR: [VEKTOR] P1→P2',
     'GERADE: [GERADE] P1→P2',
     '',
-    'PARAM: λ einstellen,',
-    '[PARAM] Gerade antippen',
+    'PARAM-Punkt auf Gerade:',
+    '1. λ mit +/- einstellen',
+    '2. [λ bestätigen] drücken',
+    '3. Gerade antippen',
     '',
     'LAENGE: [LAENGE],',
     'gelbe Kugel antippen',
