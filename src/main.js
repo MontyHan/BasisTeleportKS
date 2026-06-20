@@ -9,7 +9,8 @@ import {
   getLambdaValue, getInputValues
 } from './core/inputUI.js';
 import {
-  initVectorUI, addOrtsvektorForPoint, toggleOrtsvektoren, clearAllVectorUI
+  initVectorUI, addOrtsvektorForPoint, toggleOrtsvektoren,
+  toggleKoordinaten, clearAllVectorUI
 } from './core/vectorUI.js';
 import {
   createPoint, createGerade, createRichtungsvektor, createGeradengleichungLabel
@@ -24,9 +25,15 @@ const allPointMeshes = []; // { mesh, mathCoords:{x,y,z}, originalColor }
 const allGeraden    = []; // { line, rvArrow, rvLabel, ggLabel, marker, p1Math, p2Math }
 const allVektoren   = []; // { arrow, label, p1Math, p2Math }
 const laengeMarkers = []; // { mesh, lengthValue }
+const winkelMarkers = []; // { mesh, dir:{x,y,z} }
+
+// Undo stack: { type:'addPoint'|'addGerade'|'addVektor', pd/gd/vd }
+const undoStack = [];
 
 let appMode = 'normal';
-let selectedP1 = null;
+let selectedP1     = null; // for gerade/vektor selection
+let selectedGerade1 = null; // for schnitt
+let selectedWinkelDir1 = null; // for winkel
 
 let richtungsvektorGroup;
 let geradengleichungGroup;
@@ -37,18 +44,19 @@ let bodenKSGroup;
 let isARMode = false;
 let floorMesh, versionLabelMesh;
 
-// Shared toggle state (kept in sync between VR panel and AR overlay)
-let ovVisible = false;
-let rvVisible = true;
-let ggVisible = false;
-let glVisible = true;
-let ksVisible = false;
+// Shared toggle state
+let ovVisible  = false;
+let rvVisible  = true;
+let ggVisible  = false;
+let glVisible  = true;
+let ksVisible  = false;
+let koVisible  = false;
 
 // AR panel state
 const arValues = { x: 0, y: 0, z: 0 };
-let arLambdaValue = 0;
+let arLambdaValue   = 0;
 let arDeleteAllPending = false;
-let arDeleteAllTimer = null;
+let arDeleteAllTimer   = null;
 
 const pointRaycaster  = new THREE.Raycaster();
 const pointTempMatrix = new THREE.Matrix4();
@@ -74,7 +82,6 @@ function init() {
 
   initXR(renderer);
 
-  // Detect AR vs VR session
   renderer.xr.addEventListener('sessionstart', () => {
     const session = renderer.xr.getSession();
     const blendMode = session.environmentBlendMode;
@@ -116,7 +123,7 @@ function init() {
   floorMesh.rotation.x = -Math.PI / 2;
   scene.add(floorMesh);
 
-  versionLabelMesh = createVersionLabel('Version 9');
+  versionLabelMesh = createVersionLabel('Version 10');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
@@ -163,13 +170,28 @@ function init() {
       if (appMode !== 'normal') cancelSelection();
       appMode = 'select-param-gerade';
       allGeraden.forEach(g => { g.marker.visible = true; });
-      setPanelStatus('λ gesetzt. Gerade waehlen.', '#88ffff');
+      setPanelStatus('Gerade waehlen.', '#88ffff');
     },
 
     onLaengeMode: () => {
       if (appMode === 'select-vector-length') { cancelSelection(); return; }
       if (appMode !== 'normal') cancelSelection();
       enterLaengeMode();
+    },
+
+    onWinkelMode: () => {
+      if (appMode === 'select-winkel-1' || appMode === 'select-winkel-2') { cancelSelection(); return; }
+      if (appMode !== 'normal') cancelSelection();
+      enterWinkelMode();
+    },
+
+    onSchnittMode: () => {
+      if (appMode === 'select-schnitt-1' || appMode === 'select-schnitt-2') { cancelSelection(); return; }
+      if (allGeraden.length < 2) { setPanelStatus('Mind. 2 Geraden!', '#ff4444'); return; }
+      if (appMode !== 'normal') cancelSelection();
+      appMode = 'select-schnitt-1';
+      allGeraden.forEach(g => { g.marker.visible = true; });
+      setPanelStatus('Gerade 1 waehlen', '#88ffff');
     },
 
     onDeleteMode: (type) => {
@@ -189,20 +211,21 @@ function init() {
 
     onDeleteAll: () => { deleteAllObjects(); },
 
+    onUndoLast: () => { undoLast(); },
+
     onToggleOrtsvektoren:     (v) => { ovVisible = v; toggleOrtsvektoren(v); },
     onToggleRichtungsvektor:  (v) => { rvVisible = v; richtungsvektorGroup.visible = v; },
     onToggleGeradengleichung: (v) => { ggVisible = v; geradengleichungGroup.visible = v; },
     onToggleGL:               (v) => { glVisible = v; geradenLinienGroup.visible = v; },
-    onToggleBodenKS:          (v) => { ksVisible = v; bodenKSGroup.visible = v; }
+    onToggleBodenKS:          (v) => { ksVisible = v; bodenKSGroup.visible = v; },
+    onToggleKoordinaten:      (v) => { koVisible = v; toggleKoordinaten(v); }
   });
 
-  // VR: right controller trigger → UI selection or scene raycast
   controllers.right.addEventListener('selectstart', () => {
     const hitUI = handleUISelection();
     if (!hitUI && appMode !== 'normal') handleRaycast(rightController);
   });
 
-  // AR: left controller (index 0) receives screen taps in AR mode
   controllers.left.addEventListener('selectstart', () => {
     if (isARMode && appMode !== 'normal') handleRaycast(leftController);
   });
@@ -215,16 +238,60 @@ function init() {
 
 function addFullPoint(mx, my, mz, color = 0xff0000) {
   const mesh = createPoint(scene, my, mz, mx, color, color === 0xff0000 ? 0.05 : 0.07);
-  allPointMeshes.push({ mesh, mathCoords: { x: mx, y: my, z: mz }, originalColor: color });
+  const pd = { mesh, mathCoords: { x: mx, y: my, z: mz }, originalColor: color };
+  allPointMeshes.push(pd);
   addOrtsvektorForPoint(mesh, mx, my, mz, pointCounter++);
+  undoStack.push({ type: 'addPoint', pd });
   return mesh;
+}
+
+// ===== Undo =====
+
+function undoLast() {
+  if (undoStack.length === 0) {
+    setPanelStatus('Nichts rueckgaengig', '#888888');
+    return;
+  }
+  const action = undoStack.pop();
+  cancelSelection();
+
+  if (action.type === 'addPoint') {
+    const { pd } = action;
+    if (pd.mesh.userData.ortsvektor) {
+      pd.mesh.userData.ortsvektor.parent?.remove(pd.mesh.userData.ortsvektor);
+    }
+    scene.remove(pd.mesh); // letter + koord sprite removed as children
+    const idx = allPointMeshes.indexOf(pd);
+    if (idx !== -1) allPointMeshes.splice(idx, 1);
+    pointCounter = Math.max(0, pointCounter - 1);
+    setPanelStatus('Punkt rueckgaengig', '#ffaa44');
+
+  } else if (action.type === 'addGerade') {
+    const { gd } = action;
+    geradenLinienGroup.remove(gd.line);
+    if (gd.rvArrow) richtungsvektorGroup.remove(gd.rvArrow);
+    if (gd.rvLabel) richtungsvektorGroup.remove(gd.rvLabel);
+    geradengleichungGroup.remove(gd.ggLabel);
+    scene.remove(gd.marker);
+    const idx = allGeraden.indexOf(gd);
+    if (idx !== -1) allGeraden.splice(idx, 1);
+    setPanelStatus('Gerade rueckgaengig', '#ffaa44');
+
+  } else if (action.type === 'addVektor') {
+    const { vd } = action;
+    if (vd.arrow) richtungsvektorGroup.remove(vd.arrow);
+    if (vd.label) richtungsvektorGroup.remove(vd.label);
+    const idx = allVektoren.indexOf(vd);
+    if (idx !== -1) allVektoren.splice(idx, 1);
+    setPanelStatus('Vektor rueckgaengig', '#ffaa44');
+  }
 }
 
 // ===== Delete all =====
 
 function deleteAllObjects() {
   for (const pd of allPointMeshes) {
-    scene.remove(pd.mesh); // letter sprite is child → removed too
+    scene.remove(pd.mesh);
   }
   allPointMeshes.length = 0;
 
@@ -245,6 +312,8 @@ function deleteAllObjects() {
 
   clearAllVectorUI();
   clearLaengeMarkers();
+  clearWinkelMarkers();
+  undoStack.length = 0;
   pointCounter = 0;
   cancelSelection();
 }
@@ -255,10 +324,9 @@ function enterLaengeMode() {
   const total = allPointMeshes.length + allVektoren.length + allGeraden.length;
   if (total === 0) { setPanelStatus('Keine Vektoren!', '#ff4444'); return; }
 
-  // OV tips (length = distance from origin)
   for (const pd of allPointMeshes) {
     const c = pd.mathCoords;
-    const len = Math.sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+    const len = Math.sqrt(c.x**2 + c.y**2 + c.z**2);
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
@@ -268,15 +336,10 @@ function enterLaengeMode() {
     laengeMarkers.push({ mesh: marker, lengthValue: len });
   }
 
-  // Standalone Vektor tips (length = |p2 - p1|)
   for (const v of allVektoren) {
     if (!v.p1Math || !v.p2Math) continue;
-    const d = {
-      x: v.p2Math.x - v.p1Math.x,
-      y: v.p2Math.y - v.p1Math.y,
-      z: v.p2Math.z - v.p1Math.z
-    };
-    const len = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const d = { x: v.p2Math.x - v.p1Math.x, y: v.p2Math.y - v.p1Math.y, z: v.p2Math.z - v.p1Math.z };
+    const len = Math.sqrt(d.x**2 + d.y**2 + d.z**2);
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
@@ -286,14 +349,9 @@ function enterLaengeMode() {
     laengeMarkers.push({ mesh: marker, lengthValue: len });
   }
 
-  // Gerade-RV tips (length = |p2 - p1|)
   for (const g of allGeraden) {
-    const d = {
-      x: g.p2Math.x - g.p1Math.x,
-      y: g.p2Math.y - g.p1Math.y,
-      z: g.p2Math.z - g.p1Math.z
-    };
-    const len = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const d = { x: g.p2Math.x - g.p1Math.x, y: g.p2Math.y - g.p1Math.y, z: g.p2Math.z - g.p1Math.z };
+    const len = Math.sqrt(d.x**2 + d.y**2 + d.z**2);
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
@@ -312,7 +370,96 @@ function clearLaengeMarkers() {
   laengeMarkers.length = 0;
 }
 
-// ===== Raycast handler (VR controller or AR tap) =====
+// ===== WINKEL-Modus =====
+
+function enterWinkelMode() {
+  const total = allPointMeshes.length + allVektoren.length + allGeraden.length;
+  if (total < 2) { setPanelStatus('Mind. 2 Vektoren!', '#ff4444'); return; }
+
+  for (const pd of allPointMeshes) {
+    const c = pd.mathCoords;
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffff00 })
+    );
+    marker.position.set(c.y, c.z, c.x);
+    scene.add(marker);
+    winkelMarkers.push({ mesh: marker, dir: { x: c.x, y: c.y, z: c.z } });
+  }
+
+  for (const v of allVektoren) {
+    if (!v.p1Math || !v.p2Math) continue;
+    const dir = { x: v.p2Math.x - v.p1Math.x, y: v.p2Math.y - v.p1Math.y, z: v.p2Math.z - v.p1Math.z };
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffff00 })
+    );
+    marker.position.set(v.p2Math.y, v.p2Math.z, v.p2Math.x);
+    scene.add(marker);
+    winkelMarkers.push({ mesh: marker, dir });
+  }
+
+  for (const g of allGeraden) {
+    const dir = { x: g.p2Math.x - g.p1Math.x, y: g.p2Math.y - g.p1Math.y, z: g.p2Math.z - g.p1Math.z };
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffff00 })
+    );
+    marker.position.set(g.p2Math.y, g.p2Math.z, g.p2Math.x);
+    scene.add(marker);
+    winkelMarkers.push({ mesh: marker, dir });
+  }
+
+  appMode = 'select-winkel-1';
+  setPanelStatus('Vektor 1 waehlen', '#ffff00');
+}
+
+function clearWinkelMarkers() {
+  winkelMarkers.forEach(m => scene.remove(m.mesh));
+  winkelMarkers.length = 0;
+  selectedWinkelDir1 = null;
+}
+
+// ===== Schnittpunkt Berechnung =====
+
+function dotV(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+function computeSchnitt(g1, g2) {
+  const P1 = g1.p1Math;
+  const D1 = { x: g1.p2Math.x - P1.x, y: g1.p2Math.y - P1.y, z: g1.p2Math.z - P1.z };
+  const P2 = g2.p1Math;
+  const D2 = { x: g2.p2Math.x - P2.x, y: g2.p2Math.y - P2.y, z: g2.p2Math.z - P2.z };
+
+  const w = { x: P1.x - P2.x, y: P1.y - P2.y, z: P1.z - P2.z };
+  const a = dotV(D1, D1);
+  const b = dotV(D1, D2);
+  const c = dotV(D2, D2);
+  const d = dotV(D1, w);
+  const e = dotV(D2, w);
+  const denom = a * c - b * b;
+
+  if (Math.abs(denom) < 0.0001) return { type: 'parallel' };
+
+  const t = (b * e - c * d) / denom;
+  const s = (a * e - b * d) / denom;
+
+  const Q1 = { x: P1.x + t * D1.x, y: P1.y + t * D1.y, z: P1.z + t * D1.z };
+  const Q2 = { x: P2.x + s * D2.x, y: P2.y + s * D2.y, z: P2.z + s * D2.z };
+
+  const dist = Math.sqrt((Q1.x - Q2.x)**2 + (Q1.y - Q2.y)**2 + (Q1.z - Q2.z)**2);
+  if (dist > 0.05) return { type: 'skew' };
+
+  return {
+    type: 'intersection',
+    point: {
+      x: Math.round(((Q1.x + Q2.x) / 2) * 100) / 100,
+      y: Math.round(((Q1.y + Q2.y) / 2) * 100) / 100,
+      z: Math.round(((Q1.z + Q2.z) / 2) * 100) / 100
+    }
+  };
+}
+
+// ===== Raycast handler =====
 
 function handleRaycast(ctrl) {
   if (!ctrl) return;
@@ -322,6 +469,7 @@ function handleRaycast(ctrl) {
   pointRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(pointTempMatrix);
   pointRaycaster.far = 20;
 
+  // --- Point-selection modes ---
   if (
     appMode === 'select-gerade-1'  || appMode === 'select-gerade-2' ||
     appMode === 'select-vektor-1'  || appMode === 'select-vektor-2' ||
@@ -342,7 +490,9 @@ function handleRaycast(ctrl) {
     } else if (appMode === 'select-vektor-2') {
       const p1 = selectedP1.mathCoords, p2 = pointData.mathCoords;
       const { arrow, label } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
-      allVektoren.push({ arrow, label, p1Math: { ...p1 }, p2Math: { ...p2 } });
+      const vd = { arrow, label, p1Math: { ...p1 }, p2Math: { ...p2 } };
+      allVektoren.push(vd);
+      undoStack.push({ type: 'addVektor', vd });
       finishSelection();
 
     } else if (appMode === 'select-gerade-1') {
@@ -357,7 +507,6 @@ function handleRaycast(ctrl) {
       const { arrow: rvArrow, label: rvLabel } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
       const ggLabel = createGeradengleichungLabel(p1, p2);
       geradengleichungGroup.add(ggLabel);
-
       const midThree = new THREE.Vector3(
         (p1.y + p2.y) / 2, (p1.z + p2.z) / 2, (p1.x + p2.x) / 2
       );
@@ -368,8 +517,9 @@ function handleRaycast(ctrl) {
       marker.position.copy(midThree);
       marker.visible = false;
       scene.add(marker);
-
-      allGeraden.push({ line, rvArrow, rvLabel, ggLabel, marker, p1Math: { ...p1 }, p2Math: { ...p2 } });
+      const gd = { line, rvArrow, rvLabel, ggLabel, marker, p1Math: { ...p1 }, p2Math: { ...p2 } };
+      allGeraden.push(gd);
+      undoStack.push({ type: 'addGerade', gd });
       finishSelection();
 
     } else if (appMode === 'select-delete-punkt') {
@@ -382,7 +532,11 @@ function handleRaycast(ctrl) {
       setPanelStatus('Bereit');
     }
 
-  } else if (appMode === 'select-delete-gerade' || appMode === 'select-param-gerade') {
+  // --- Gerade-marker modes (delete, param, schnitt) ---
+  } else if (
+    appMode === 'select-delete-gerade' || appMode === 'select-param-gerade' ||
+    appMode === 'select-schnitt-1'     || appMode === 'select-schnitt-2'
+  ) {
     const markers = allGeraden.map(g => g.marker);
     const hits = pointRaycaster.intersectObjects(markers, false);
     if (!hits.length) return;
@@ -396,38 +550,87 @@ function handleRaycast(ctrl) {
       geradengleichungGroup.remove(geradeData.ggLabel);
       scene.remove(geradeData.marker);
       allGeraden.splice(allGeraden.indexOf(geradeData), 1);
+      allGeraden.forEach(g => { g.marker.visible = false; });
+      appMode = 'normal';
+      setPanelStatus('Bereit');
 
     } else if (appMode === 'select-param-gerade') {
       const lambda = isARMode ? arLambdaValue : getLambdaValue();
       const OV = geradeData.p1Math;
-      const RV = {
-        x: geradeData.p2Math.x - OV.x,
-        y: geradeData.p2Math.y - OV.y,
-        z: geradeData.p2Math.z - OV.z
-      };
-      const mp = {
-        x: OV.x + lambda * RV.x,
-        y: OV.y + lambda * RV.y,
-        z: OV.z + lambda * RV.z
-      };
-      addFullPoint(mp.x, mp.y, mp.z, 0x44aaff);
+      const RV = { x: geradeData.p2Math.x - OV.x, y: geradeData.p2Math.y - OV.y, z: geradeData.p2Math.z - OV.z };
+      addFullPoint(OV.x + lambda * RV.x, OV.y + lambda * RV.y, OV.z + lambda * RV.z, 0x44aaff);
+      allGeraden.forEach(g => { g.marker.visible = false; });
+      appMode = 'normal';
+      setPanelStatus('Bereit');
+
+    } else if (appMode === 'select-schnitt-1') {
+      selectedGerade1 = geradeData;
+      geradeData.marker.material.color.setHex(0x00ffff); // highlight selected
+      appMode = 'select-schnitt-2';
+      setPanelStatus('Gerade 2 waehlen', '#88ffff');
+
+    } else if (appMode === 'select-schnitt-2') {
+      if (geradeData === selectedGerade1) return; // ignore same gerade
+      const result = computeSchnitt(selectedGerade1, geradeData);
+      // restore marker
+      selectedGerade1.marker.material.color.setHex(0xffff00);
+      allGeraden.forEach(g => { g.marker.visible = false; });
+      selectedGerade1 = null;
+      appMode = 'normal';
+
+      if (result.type === 'intersection') {
+        const p = result.point;
+        addFullPoint(p.x, p.y, p.z, 0x44aaff);
+        setPanelStatus('Schnittpunkt!', '#44ffff');
+      } else if (result.type === 'parallel') {
+        setPanelStatus('Parallel!', '#ff8800');
+        setTimeout(() => setPanelStatus('Bereit'), 3000);
+      } else {
+        setPanelStatus('Windschief!', '#ff8800');
+        setTimeout(() => setPanelStatus('Bereit'), 3000);
+      }
     }
 
-    allGeraden.forEach(g => { g.marker.visible = false; });
-    appMode = 'normal';
-    setPanelStatus('Bereit');
-
+  // --- LAENGE mode ---
   } else if (appMode === 'select-vector-length') {
     const meshes = laengeMarkers.map(m => m.mesh);
     const hits = pointRaycaster.intersectObjects(meshes, false);
     if (!hits.length) return;
     const data = laengeMarkers.find(m => m.mesh === hits[0].object);
     if (!data) return;
-
     const rounded = Math.round(data.lengthValue * 100) / 100;
     setPanelStatus(`|u| = ${rounded}`, '#ffff00');
     clearLaengeMarkers();
     appMode = 'normal';
+
+  // --- WINKEL mode ---
+  } else if (appMode === 'select-winkel-1' || appMode === 'select-winkel-2') {
+    const meshes = winkelMarkers.map(m => m.mesh);
+    const hits = pointRaycaster.intersectObjects(meshes, false);
+    if (!hits.length) return;
+    const wm = winkelMarkers.find(m => m.mesh === hits[0].object);
+    if (!wm) return;
+
+    if (appMode === 'select-winkel-1') {
+      selectedWinkelDir1 = wm.dir;
+      wm.mesh.material.color.setHex(0x00ffff); // highlight first
+      appMode = 'select-winkel-2';
+      setPanelStatus('Vektor 2 waehlen', '#88ffff');
+
+    } else {
+      const v1 = selectedWinkelDir1, v2 = wm.dir;
+      const len1 = Math.sqrt(v1.x**2 + v1.y**2 + v1.z**2);
+      const len2 = Math.sqrt(v2.x**2 + v2.y**2 + v2.z**2);
+      if (len1 < 0.001 || len2 < 0.001) {
+        setPanelStatus('Nullvektor!', '#ff4444');
+      } else {
+        const cosA = Math.max(-1, Math.min(1, dotV(v1, v2) / (len1 * len2)));
+        const angle = Math.round(Math.acos(cosA) * 180 / Math.PI * 10) / 10;
+        setPanelStatus(`Winkel: ${angle} Grad`, '#88ffff');
+      }
+      clearWinkelMarkers();
+      appMode = 'normal';
+    }
   }
 }
 
@@ -445,8 +648,13 @@ function cancelSelection() {
     selectedP1.mesh.material.color.setHex(selectedP1.originalColor);
     selectedP1 = null;
   }
+  if (selectedGerade1) {
+    selectedGerade1.marker.material.color.setHex(0xffff00);
+    selectedGerade1 = null;
+  }
   allGeraden.forEach(g => { g.marker.visible = false; });
   clearLaengeMarkers();
+  clearWinkelMarkers();
   appMode = 'normal';
   setPanelStatus('Bereit');
 }
@@ -456,7 +664,6 @@ function cancelSelection() {
 function setupARPanel() {
   function arBtn(id) { return document.getElementById(id); }
 
-  // Coordinate +/- buttons
   for (const ax of ['x', 'y', 'z']) {
     arBtn(`ar-${ax}-m`)?.addEventListener('click', () => {
       arValues[ax] -= 1;
@@ -468,7 +675,6 @@ function setupARPanel() {
     });
   }
 
-  // Lambda
   arBtn('ar-lam-m')?.addEventListener('click', () => {
     arLambdaValue -= 1;
     document.getElementById('ar-lam-v').textContent = arLambdaValue;
@@ -478,13 +684,10 @@ function setupARPanel() {
     document.getElementById('ar-lam-v').textContent = arLambdaValue;
   });
 
-  // PUNKT
   arBtn('ar-punkt')?.addEventListener('click', () => {
     arCancelDeleteAll();
     addFullPoint(arValues.x, arValues.y, arValues.z, 0xff0000);
   });
-
-  // GERADE
   arBtn('ar-gerade')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-gerade-1' || appMode === 'select-gerade-2') { cancelSelection(); return; }
@@ -492,8 +695,6 @@ function setupARPanel() {
     appMode = 'select-gerade-1';
     setPanelStatus('Punkt 1 antippen...', '#ffff00');
   });
-
-  // VEKTOR
   arBtn('ar-vektor')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-vektor-1' || appMode === 'select-vektor-2') { cancelSelection(); return; }
@@ -501,8 +702,6 @@ function setupARPanel() {
     appMode = 'select-vektor-1';
     setPanelStatus('Vekt. P1 antippen...', '#ffff00');
   });
-
-  // PARAM
   arBtn('ar-param')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-param-gerade') { cancelSelection(); return; }
@@ -512,16 +711,31 @@ function setupARPanel() {
     allGeraden.forEach(g => { g.marker.visible = true; });
     setPanelStatus('Gerade antippen...', '#88ffff');
   });
-
-  // LAENGE
   arBtn('ar-laenge')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-vector-length') { cancelSelection(); return; }
     if (appMode !== 'normal') cancelSelection();
     enterLaengeMode();
   });
-
-  // P-DEL
+  arBtn('ar-winkel')?.addEventListener('click', () => {
+    arCancelDeleteAll();
+    if (appMode === 'select-winkel-1' || appMode === 'select-winkel-2') { cancelSelection(); return; }
+    if (appMode !== 'normal') cancelSelection();
+    enterWinkelMode();
+  });
+  arBtn('ar-schnitt')?.addEventListener('click', () => {
+    arCancelDeleteAll();
+    if (appMode === 'select-schnitt-1' || appMode === 'select-schnitt-2') { cancelSelection(); return; }
+    if (allGeraden.length < 2) { setPanelStatus('Mind. 2 Geraden!', '#ff4444'); return; }
+    if (appMode !== 'normal') cancelSelection();
+    appMode = 'select-schnitt-1';
+    allGeraden.forEach(g => { g.marker.visible = true; });
+    setPanelStatus('Gerade 1 antippen...', '#88ffff');
+  });
+  arBtn('ar-undo')?.addEventListener('click', () => {
+    arCancelDeleteAll();
+    undoLast();
+  });
   arBtn('ar-pdel')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-delete-punkt') { cancelSelection(); return; }
@@ -529,8 +743,6 @@ function setupARPanel() {
     appMode = 'select-delete-punkt';
     setPanelStatus('Punkt antippen...', '#ff6666');
   });
-
-  // G-DEL
   arBtn('ar-gdel')?.addEventListener('click', () => {
     arCancelDeleteAll();
     if (appMode === 'select-delete-gerade') { cancelSelection(); return; }
@@ -539,8 +751,6 @@ function setupARPanel() {
     allGeraden.forEach(g => { g.marker.visible = true; });
     setPanelStatus('Gerade antippen...', '#ff6666');
   });
-
-  // ALLES (two-press confirmation)
   arBtn('ar-alles')?.addEventListener('click', () => {
     if (!arDeleteAllPending) {
       arDeleteAllPending = true;
@@ -561,38 +771,39 @@ function setupARPanel() {
   // Toggles
   arBtn('ar-ov')?.addEventListener('click', (e) => {
     arCancelDeleteAll();
-    ovVisible = !ovVisible;
-    toggleOrtsvektoren(ovVisible);
+    ovVisible = !ovVisible; toggleOrtsvektoren(ovVisible);
     e.target.textContent = ovVisible ? 'OV:AN' : 'OV:AUS';
     e.target.className = ovVisible ? 'tog-on' : 'tog-off';
   });
   arBtn('ar-rv')?.addEventListener('click', (e) => {
     arCancelDeleteAll();
-    rvVisible = !rvVisible;
-    richtungsvektorGroup.visible = rvVisible;
+    rvVisible = !rvVisible; richtungsvektorGroup.visible = rvVisible;
     e.target.textContent = rvVisible ? 'RV:AN' : 'RV:AUS';
     e.target.className = rvVisible ? 'tog-on' : 'tog-off';
   });
   arBtn('ar-gg')?.addEventListener('click', (e) => {
     arCancelDeleteAll();
-    ggVisible = !ggVisible;
-    geradengleichungGroup.visible = ggVisible;
+    ggVisible = !ggVisible; geradengleichungGroup.visible = ggVisible;
     e.target.textContent = ggVisible ? 'GG:AN' : 'GG:AUS';
     e.target.className = ggVisible ? 'tog-on' : 'tog-off';
   });
   arBtn('ar-gl')?.addEventListener('click', (e) => {
     arCancelDeleteAll();
-    glVisible = !glVisible;
-    geradenLinienGroup.visible = glVisible;
+    glVisible = !glVisible; geradenLinienGroup.visible = glVisible;
     e.target.textContent = glVisible ? 'GL:AN' : 'GL:AUS';
     e.target.className = glVisible ? 'tog-on' : 'tog-off';
   });
   arBtn('ar-ks')?.addEventListener('click', (e) => {
     arCancelDeleteAll();
-    ksVisible = !ksVisible;
-    bodenKSGroup.visible = ksVisible;
+    ksVisible = !ksVisible; bodenKSGroup.visible = ksVisible;
     e.target.textContent = ksVisible ? 'KS:AN' : 'KS:AUS';
     e.target.className = ksVisible ? 'tog-on' : 'tog-off';
+  });
+  arBtn('ar-ko')?.addEventListener('click', (e) => {
+    arCancelDeleteAll();
+    koVisible = !koVisible; toggleKoordinaten(koVisible);
+    e.target.textContent = koVisible ? 'KO:AN' : 'KO:AUS';
+    e.target.className = koVisible ? 'tog-on' : 'tog-off';
   });
 }
 

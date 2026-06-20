@@ -13,64 +13,66 @@
       background: rgba(0, 0, 40, 0.88);
       color: white;
       font-family: Arial, sans-serif;
-      padding: 8px 10px;
+      padding: 6px 8px;
       z-index: 100;
       user-select: none;
     }
     #ar-overlay .ar-row {
       display: flex;
-      gap: 6px;
+      gap: 5px;
       justify-content: center;
       align-items: center;
       flex-wrap: wrap;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
     }
     #ar-overlay button {
       background: #2244cc;
       color: white;
       border: none;
       border-radius: 7px;
-      padding: 9px 13px;
-      font-size: 17px;
+      padding: 8px 11px;
+      font-size: 15px;
       font-weight: bold;
       cursor: pointer;
-      min-width: 44px;
+      min-width: 40px;
       touch-action: manipulation;
     }
     #ar-overlay button.tog-on  { background: #227722; }
     #ar-overlay button.tog-off { background: #2244cc; }
     #ar-overlay button.del-btn { background: #883322; }
+    #ar-overlay button.calc-btn { background: #226644; }
+    #ar-overlay button.undo-btn { background: #664422; }
     #ar-overlay .ar-axis {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       background: rgba(255,255,255,0.12);
-      padding: 4px 9px;
+      padding: 4px 8px;
       border-radius: 7px;
     }
     #ar-overlay .ax-label {
       font-weight: bold;
-      font-size: 17px;
-      min-width: 14px;
+      font-size: 15px;
+      min-width: 12px;
     }
     #ar-overlay .ax-val {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: bold;
-      min-width: 32px;
+      min-width: 28px;
       text-align: center;
     }
     #ar-status {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       color: white;
-      margin-top: 3px;
+      margin-top: 2px;
     }
   </style>
 </head>
 <body>
-  <!-- AR DOM Overlay (hidden in VR/desktop, shown in AR session) -->
+  <!-- AR DOM Overlay -->
   <div id="ar-overlay">
-    <!-- Koordinaten-Reihe -->
+    <!-- Zeile 1: Koordinaten + Erstellen -->
     <div class="ar-row">
       <div class="ar-axis">
         <span class="ax-label">X</span>
@@ -93,8 +95,9 @@
       <button id="ar-punkt">PUNKT</button>
       <button id="ar-gerade">GERADE</button>
       <button id="ar-vektor">VEKTOR</button>
+      <button id="ar-undo" class="undo-btn">UNDO</button>
     </div>
-    <!-- λ + PARAM + LAENGE -->
+    <!-- Zeile 2: λ + Berechnungen -->
     <div class="ar-row">
       <div class="ar-axis">
         <span class="ax-label" style="font-style:italic">λ</span>
@@ -104,17 +107,20 @@
       </div>
       <button id="ar-param">PARAM</button>
       <button id="ar-laenge">LAENGE</button>
+      <button id="ar-winkel" class="calc-btn">WINKEL</button>
+      <button id="ar-schnitt" class="calc-btn">SCHNITT</button>
+    </div>
+    <!-- Zeile 3: Löschen + Toggles -->
+    <div class="ar-row">
       <button id="ar-pdel" class="del-btn">P-DEL</button>
       <button id="ar-gdel" class="del-btn">G-DEL</button>
       <button id="ar-alles" class="del-btn">ALLES</button>
-    </div>
-    <!-- Toggles -->
-    <div class="ar-row">
       <button id="ar-ov"  class="tog-off">OV:AUS</button>
       <button id="ar-rv"  class="tog-on" >RV:AN</button>
       <button id="ar-gg"  class="tog-off">GG:AUS</button>
       <button id="ar-gl"  class="tog-on" >GL:AN</button>
       <button id="ar-ks"  class="tog-off">KS:AUS</button>
+      <button id="ar-ko"  class="tog-off">KO:AUS</button>
     </div>
     <div id="ar-status">Bereit – Tipp auf Objekte zum Auswählen</div>
   </div>

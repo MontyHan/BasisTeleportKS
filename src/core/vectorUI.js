@@ -2,6 +2,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 let scene;
 let ortsvektorGroup = null;
+const allKoordSprites = [];
+let koordVisible = false;
 
 export function initVectorUI(s) {
   scene = s;
@@ -15,10 +17,18 @@ export function addOrtsvektorForPoint(point, x, y, z, index) {
 
   const letter = String.fromCharCode(65 + (index % 26));
 
-  // Letter sprite as child of point mesh — always visible, moves with point
+  // Letter sprite (always visible, child of mesh)
   const letterSprite = makeLetterSprite(letter);
   letterSprite.position.set(0, 0.12, 0);
   point.add(letterSprite);
+
+  // Coordinate label (toggleable, child of mesh)
+  const koordSprite = makeKoordSprite(`(${x}|${y}|${z})`);
+  koordSprite.position.set(0.25, -0.02, 0);
+  koordSprite.visible = koordVisible;
+  point.add(koordSprite);
+  allKoordSprites.push(koordSprite);
+  point.userData.koordSprite = koordSprite;
 
   // OV group (visibility controlled by toggle)
   const group = new THREE.Group();
@@ -45,12 +55,20 @@ export function toggleOrtsvektoren(visible) {
   if (ortsvektorGroup) ortsvektorGroup.visible = visible;
 }
 
+export function toggleKoordinaten(visible) {
+  koordVisible = visible;
+  for (const s of allKoordSprites) s.visible = visible;
+}
+
 export function clearAllVectorUI() {
   if (!ortsvektorGroup) return;
   while (ortsvektorGroup.children.length > 0) {
     ortsvektorGroup.remove(ortsvektorGroup.children[0]);
   }
+  allKoordSprites.length = 0;
 }
+
+// ===== Sprite helpers =====
 
 function makeLetterSprite(letter) {
   const canvas = document.createElement('canvas');
@@ -66,6 +84,23 @@ function makeLetterSprite(letter) {
   texture.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
   sprite.scale.set(0.25, 0.25, 1);
+  return sprite;
+}
+
+function makeKoordSprite(text) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 260; canvas.height = 90;
+  ctx.clearRect(0, 0, 260, 90);
+  ctx.fillStyle = 'rgba(255,255,180,1)';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 8, 45);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+  sprite.scale.set(0.48, 0.17, 1); // 260/90 ≈ 2.89, so 0.48/0.17 ≈ 2.82 ✓
   return sprite;
 }
 

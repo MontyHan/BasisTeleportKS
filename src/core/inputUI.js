@@ -21,25 +21,31 @@ let onGeradeMode = null;
 let onVektorMode = null;
 let onParamMode = null;
 let onLaengeMode = null;
+let onWinkelMode = null;
+let onSchnittMode = null;
 let onDeleteMode = null;
 let onDeleteAll = null;
+let onUndoLast = null;
 let onToggleOrtsvektoren = null;
 let onToggleRichtungsvektor = null;
 let onToggleGeradengleichung = null;
 let onToggleGL = null;
 let onToggleBodenKS = null;
+let onToggleKoordinaten = null;
 
 let ortsvektorenVisible = false;
 let richtungsvektorVisible = true;
 let geradengleichungVisible = false;
 let glVisible = true;
 let ksVisible = false;
+let koordinatenVisible = false;
 
 let ovToggleBtn = null;
 let rvToggleBtn = null;
 let ggToggleBtn = null;
 let glToggleBtn = null;
 let ksToggleBtn = null;
+let koToggleBtn = null;
 
 let deleteAllPending = false;
 let deleteAllTimer = null;
@@ -53,13 +59,17 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   onVektorMode             = options.onVektorMode             ?? null;
   onParamMode              = options.onParamMode              ?? null;
   onLaengeMode             = options.onLaengeMode             ?? null;
+  onWinkelMode             = options.onWinkelMode             ?? null;
+  onSchnittMode            = options.onSchnittMode            ?? null;
   onDeleteMode             = options.onDeleteMode             ?? null;
   onDeleteAll              = options.onDeleteAll              ?? null;
+  onUndoLast               = options.onUndoLast               ?? null;
   onToggleOrtsvektoren     = options.onToggleOrtsvektoren     ?? null;
   onToggleRichtungsvektor  = options.onToggleRichtungsvektor  ?? null;
   onToggleGeradengleichung = options.onToggleGeradengleichung ?? null;
   onToggleGL               = options.onToggleGL               ?? null;
   onToggleBodenKS          = options.onToggleBodenKS          ?? null;
+  onToggleKoordinaten      = options.onToggleKoordinaten      ?? null;
 
   createPanel();
   createHelpPanel();
@@ -77,12 +87,8 @@ export function setPanelStatus(text, color = 'white') {
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
     statusSprite.material.map.needsUpdate = true;
   }
-  // Also update AR status div when visible
   const arStatus = document.getElementById('ar-status');
-  if (arStatus) {
-    arStatus.textContent = text;
-    arStatus.style.color = color;
-  }
+  if (arStatus) { arStatus.textContent = text; arStatus.style.color = color; }
 }
 
 export function setPanelVisible(visible) {
@@ -165,14 +171,14 @@ function createPanel() {
   });
   allDelBtn.material.color.setHex(0x883322);
 
-  // ---- 5 Toggles ----
-  ovToggleBtn = addNarrow('OV:AUS', -0.44, -1.9, () => {
+  // ---- 6 Toggles (OV RV GG GL KS KO) ----
+  ovToggleBtn = addNarrow('OV:AUS', -0.5, -1.9, () => {
     cancelDeleteAll();
     ortsvektorenVisible = !ortsvektorenVisible;
     if (onToggleOrtsvektoren) onToggleOrtsvektoren(ortsvektorenVisible);
     updateButtonLabel(ovToggleBtn, ortsvektorenVisible ? 'OV:AN' : 'OV:AUS', ortsvektorenVisible);
   });
-  rvToggleBtn = addNarrow('RV:AN', -0.22, -1.9, () => {
+  rvToggleBtn = addNarrow('RV:AN', -0.3, -1.9, () => {
     cancelDeleteAll();
     richtungsvektorVisible = !richtungsvektorVisible;
     if (onToggleRichtungsvektor) onToggleRichtungsvektor(richtungsvektorVisible);
@@ -180,13 +186,13 @@ function createPanel() {
   });
   rvToggleBtn.material.color.setHex(0x44aa44);
 
-  ggToggleBtn = addNarrow('GG:AUS', 0.0, -1.9, () => {
+  ggToggleBtn = addNarrow('GG:AUS', -0.1, -1.9, () => {
     cancelDeleteAll();
     geradengleichungVisible = !geradengleichungVisible;
     if (onToggleGeradengleichung) onToggleGeradengleichung(geradengleichungVisible);
     updateButtonLabel(ggToggleBtn, geradengleichungVisible ? 'GG:AN' : 'GG:AUS', geradengleichungVisible);
   });
-  glToggleBtn = addNarrow('GL:AN', 0.22, -1.9, () => {
+  glToggleBtn = addNarrow('GL:AN', 0.1, -1.9, () => {
     cancelDeleteAll();
     glVisible = !glVisible;
     if (onToggleGL) onToggleGL(glVisible);
@@ -194,17 +200,27 @@ function createPanel() {
   });
   glToggleBtn.material.color.setHex(0x44aa44);
 
-  ksToggleBtn = addNarrow('KS:AUS', 0.44, -1.9, () => {
+  ksToggleBtn = addNarrow('KS:AUS', 0.3, -1.9, () => {
     cancelDeleteAll();
     ksVisible = !ksVisible;
     if (onToggleBodenKS) onToggleBodenKS(ksVisible);
     updateButtonLabel(ksToggleBtn, ksVisible ? 'KS:AN' : 'KS:AUS', ksVisible);
   });
+  koToggleBtn = addNarrow('KO:AUS', 0.5, -1.9, () => {
+    cancelDeleteAll();
+    koordinatenVisible = !koordinatenVisible;
+    if (onToggleKoordinaten) onToggleKoordinaten(koordinatenVisible);
+    updateButtonLabel(koToggleBtn, koordinatenVisible ? 'KO:AN' : 'KO:AUS', koordinatenVisible);
+  });
 
   // ---- λ-Reihe ----
   createLambdaRow(panelRoot, -2.15);
 
-  // ---- PARAM + LAENGE ----
+  // ---- UNDO + PARAM + LAENGE ----
+  addMedium('UNDO', -0.46, -2.4, () => {
+    cancelDeleteAll();
+    if (onUndoLast) onUndoLast();
+  });
   addMedium('PARAM', -0.12, -2.4, () => {
     cancelDeleteAll();
     if (onParamMode) onParamMode();
@@ -212,6 +228,17 @@ function createPanel() {
   addMedium('LAENGE', 0.22, -2.4, () => {
     cancelDeleteAll();
     if (onLaengeMode) onLaengeMode();
+  });
+
+  // ---- BERECHNEN: WINKEL + SCHNITT ----
+  makeRowLabel('BERECHNEN', -0.38, -2.65);
+  addMedium('WINKEL', -0.12, -2.65, () => {
+    cancelDeleteAll();
+    if (onWinkelMode) onWinkelMode();
+  });
+  addMedium('SCHNITT', 0.22, -2.65, () => {
+    cancelDeleteAll();
+    if (onSchnittMode) onSchnittMode();
   });
 }
 
@@ -440,27 +467,29 @@ function createHelpPanel() {
   leftController.add(helpGroup);
 
   const lines = [
-    '--- HILFE V9 ---',
+    '--- HILFE V10 ---',
     '',
-    'PUNKT: x/y/z einstellen,',
-    'dann [PUNKT] drücken',
+    'PUNKT: x/y/z → [PUNKT]',
     '→ Punkte: A, B, C, ...',
-    'VEKTOR: [VEKTOR] P1 → P2',
-    'GERADE: [GERADE] P1 → P2',
+    'VEKTOR: [VEKTOR] P1→P2',
+    'GERADE: [GERADE] P1→P2',
     '',
     'PARAM: λ einstellen,',
-    '[PARAM] → Gerade wählen',
-    '→ neuer Punkt auf Gerade',
+    '[PARAM] Gerade antippen',
     '',
-    'LAENGE: [LAENGE] drücken,',
-    'gelbe Kugel anklicken',
+    'LAENGE: [LAENGE],',
+    'gelbe Kugel antippen',
     '',
-    'LOESCHEN:',
-    '[P-DEL] Punkt anklicken',
-    '[G-DEL] gelbe Kugel',
-    '[ALLES] 2× drücken!',
+    'WINKEL: [WINKEL], dann',
+    '2 Vektoren antippen',
     '',
-    'TOGGLE: OV RV GG GL KS',
+    'SCHNITT: [SCHNITT], dann',
+    '2 Geraden antippen',
+    '',
+    'UNDO: letzten Schritt rueckgaengig',
+    '',
+    'LOESCHEN: P-DEL G-DEL ALLES(2x)',
+    'TOGGLE: OV RV GG GL KS KO',
     'TELEPORT: linker Ctrl halten',
   ];
 
