@@ -1,6 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { initXR } from './core/xr.js';
-import { initTaskUI, toggleTaskPanel, isTaskPanelVisible, getTaskPanelButtons } from './core/taskUI.js';
+import { initTaskUI, toggleTaskPanel, isTaskPanelVisible, getTaskPanelButtons, updateTaskPanel } from './core/taskUI.js';
 import { initControllers, updateControllers } from './core/controllers.js';
 import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
@@ -748,6 +748,7 @@ function animate() {
   renderer.setAnimationLoop(() => {
     updateControllers();
     updateTeleport();
+    updateTaskPanel(camera);
     renderer.render(scene, camera);
   });
 }

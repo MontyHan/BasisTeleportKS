@@ -382,6 +382,13 @@ export function toggleTaskPanel() {
 export function isTaskPanelVisible() { return taskPanelVisible; }
 export function getTaskPanelButtons() { return taskPanelButtons; }
 
+export function updateTaskPanel(camera) {
+  if (!taskGroup || !taskPanelVisible) return;
+  const camPos = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+  taskGroup.lookAt(camPos);
+}
+
 // ===== Interne Helfer =====
 
 function _refresh() {
