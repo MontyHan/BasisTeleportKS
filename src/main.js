@@ -90,7 +90,7 @@ function init() {
   floorMesh.rotation.x = -Math.PI / 2;
   scene.add(floorMesh);
 
-  createVersionLabel('Version 12');
+  createVersionLabel('Version 16');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
