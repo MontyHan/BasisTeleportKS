@@ -32,6 +32,7 @@ let onToggleGeradengleichung = null;
 let onToggleGL = null;
 let onToggleBodenKS = null;
 let onToggleKoordinaten = null;
+let onToggleTask = null;
 
 let ortsvektorenVisible = false;
 let richtungsvektorVisible = true;
@@ -70,6 +71,7 @@ export function initInputUI(s, cam, r, lCtrl, rCtrl, options = {}) {
   onToggleGL               = options.onToggleGL               ?? null;
   onToggleBodenKS          = options.onToggleBodenKS          ?? null;
   onToggleKoordinaten      = options.onToggleKoordinaten      ?? null;
+  onToggleTask             = options.onToggleTask             ?? null;
 
   createPanel();
   createHelpPanel();
@@ -234,6 +236,13 @@ function createPanel() {
     cancelDeleteAll();
     if (onSchnittMode) onSchnittMode();
   });
+
+  // ---- AUFGABEN-Panel Toggle ----
+  const taskBtn = addWide('AUFGABEN', 0, -2.92, () => {
+    cancelDeleteAll();
+    if (onToggleTask) onToggleTask();
+  });
+  taskBtn.material.color.setHex(0x335500);
 }
 
 function cancelDeleteAll() {

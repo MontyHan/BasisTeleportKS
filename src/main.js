@@ -1,5 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { initXR } from './core/xr.js';
+import { initTaskUI, toggleTaskPanel, isTaskPanelVisible, getTaskPanelButtons } from './core/taskUI.js';
 import { initControllers, updateControllers } from './core/controllers.js';
 import { initTeleport, updateTeleport } from './core/teleport.js';
 import { initGrid } from './core/grid.js';
@@ -21,6 +22,7 @@ let rig;
 let rightController, leftController;
 
 let pointCounter = 0;
+let rvCounter = 0;
 const allPointMeshes = []; // { mesh, mathCoords:{x,y,z}, originalColor }
 const allGeraden    = []; // { line, rvArrow, rvLabel, ggLabel, marker, p1Math, p2Math }
 const allVektoren   = []; // { arrow, label, p1Math, p2Math }
@@ -184,15 +186,20 @@ function init() {
     onToggleGeradengleichung: (v) => { ggVisible = v; geradengleichungGroup.visible = v; },
     onToggleGL:               (v) => { glVisible = v; geradenLinienGroup.visible = v; },
     onToggleBodenKS:          (v) => { ksVisible = v; bodenKSGroup.visible = v; },
-    onToggleKoordinaten:      (v) => { koVisible = v; toggleKoordinaten(v); }
+    onToggleKoordinaten:      (v) => { koVisible = v; toggleKoordinaten(v); },
+    onToggleTask:             () => { toggleTaskPanel(); }
   });
 
   controllers.right.addEventListener('selectstart', () => {
     const hitUI = handleUISelection();
-    if (!hitUI && appMode !== 'normal') handleRaycast(rightController);
+    if (!hitUI) {
+      const hitTask = handleTaskPanelSelection();
+      if (!hitTask && appMode !== 'normal') handleRaycast(rightController);
+    }
   });
 
   initTeleport(renderer, scene, rig);
+  initTaskUI(scene);
 }
 
 // ===== Full point with letter label =====
@@ -236,6 +243,7 @@ function undoLast() {
     scene.remove(gd.marker);
     const idx = allGeraden.indexOf(gd);
     if (idx !== -1) allGeraden.splice(idx, 1);
+    rvCounter = Math.max(0, rvCounter - 1);
     setPanelStatus('Gerade rueckgaengig', '#ffaa44');
 
   } else if (action.type === 'addVektor') {
@@ -244,6 +252,7 @@ function undoLast() {
     if (vd.label) richtungsvektorGroup.remove(vd.label);
     const idx = allVektoren.indexOf(vd);
     if (idx !== -1) allVektoren.splice(idx, 1);
+    rvCounter = Math.max(0, rvCounter - 1);
     setPanelStatus('Vektor rueckgaengig', '#ffaa44');
   }
 }
@@ -276,6 +285,7 @@ function deleteAllObjects() {
   clearWinkelMarkers();
   undoStack.length = 0;
   pointCounter = 0;
+  rvCounter = 0;
   cancelSelection();
 }
 
@@ -460,7 +470,7 @@ function handleRaycast(ctrl) {
 
     } else if (appMode === 'select-vektor-2') {
       const p1 = selectedP1.mathCoords, p2 = pointData.mathCoords;
-      const { arrow, label } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
+      const { arrow, label } = createRichtungsvektor(richtungsvektorGroup, p1, p2, 0xff8800, getRVLetter(rvCounter++));
       const vd = { arrow, label, p1Math: { ...p1 }, p2Math: { ...p2 } };
       allVektoren.push(vd);
       undoStack.push({ type: 'addVektor', vd });
@@ -475,7 +485,7 @@ function handleRaycast(ctrl) {
     } else if (appMode === 'select-gerade-2') {
       const p1 = selectedP1.mathCoords, p2 = pointData.mathCoords;
       const line   = createGerade(geradenLinienGroup, p1, p2);
-      const { arrow: rvArrow, label: rvLabel } = createRichtungsvektor(richtungsvektorGroup, p1, p2);
+      const { arrow: rvArrow, label: rvLabel } = createRichtungsvektor(richtungsvektorGroup, p1, p2, 0xff8800, getRVLetter(rvCounter++));
       const ggLabel = createGeradengleichungLabel(p1, p2);
       geradengleichungGroup.add(ggLabel);
       const midThree = new THREE.Vector3(
@@ -628,6 +638,31 @@ function cancelSelection() {
   clearWinkelMarkers();
   appMode = 'normal';
   setPanelStatus('Bereit');
+}
+
+// ===== RV Buchstaben u, v, w, u', v', w', ... =====
+
+function getRVLetter(i) {
+  const base = ['u', 'v', 'w'];
+  const primes = '′'.repeat(Math.floor(i / 3)); // ′ prime symbol
+  return base[i % 3] + primes;
+}
+
+// ===== Task-Panel Raycasting =====
+
+function handleTaskPanelSelection() {
+  if (!isTaskPanelVisible()) return false;
+  const btns = getTaskPanelButtons();
+  if (!btns.length) return false;
+  pointTempMatrix.identity().extractRotation(rightController.matrixWorld);
+  pointRaycaster.ray.origin.setFromMatrixPosition(rightController.matrixWorld);
+  pointRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(pointTempMatrix);
+  pointRaycaster.far = 6;
+  const hits = pointRaycaster.intersectObjects(btns, false);
+  if (!hits.length) return false;
+  const cb = hits[0].object?.userData?.onClick;
+  if (typeof cb === 'function') { cb(); return true; }
+  return false;
 }
 
 // ===== Scene helpers =====

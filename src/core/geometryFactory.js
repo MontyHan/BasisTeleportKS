@@ -31,7 +31,7 @@ export function createGerade(parent, p1Math, p2Math, color = 0xffff00) {
 }
 
 // Richtungsvektor-Pfeil + Label. Gibt {arrow, label} zurück, beide in parent eingefügt.
-export function createRichtungsvektor(parent, p1Math, p2Math, color = 0xff8800) {
+export function createRichtungsvektor(parent, p1Math, p2Math, color = 0xff8800, letter = 'u') {
   const a = new THREE.Vector3(p1Math.y, p1Math.z, p1Math.x);
   const b = new THREE.Vector3(p2Math.y, p2Math.z, p2Math.x);
   const dir = b.clone().sub(a);
@@ -50,7 +50,7 @@ export function createRichtungsvektor(parent, p1Math, p2Math, color = 0xff8800) 
     y: p2Math.y - p1Math.y,
     z: p2Math.z - p1Math.z
   };
-  const canvas = buildRVCanvas(rv);
+  const canvas = buildRVCanvas(rv, letter);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
@@ -88,7 +88,7 @@ export function createGeradengleichungLabel(p1Math, p2Math) {
 
 // ===== private canvas helpers =====
 
-function buildRVCanvas(rv) {
+function buildRVCanvas(rv, letter = 'u') {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 200;
@@ -105,8 +105,8 @@ function buildRVCanvas(rv) {
   ctx.font = 'bold 24px Arial';
   ctx.textAlign = 'left';
   let cx = 8;
-  ctx.fillText('u', cx, y2);
-  const uw = ctx.measureText('u').width;
+  ctx.fillText(letter, cx, y2);
+  const uw = ctx.measureText(letter).width;
   drawVectorArrow(ctx, cx + uw / 2, y2 - 16, uw + 2);
   cx += uw;
   ctx.fillText(' =', cx, y2);
