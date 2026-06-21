@@ -90,7 +90,7 @@ function init() {
   floorMesh.rotation.x = -Math.PI / 2;
   scene.add(floorMesh);
 
-  createVersionLabel('Version 17');
+  createVersionLabel('Version 18');
   createMathTextbookAxes(10);
 
   const controllers = initControllers(renderer, rig);
@@ -748,7 +748,7 @@ function animate() {
   renderer.setAnimationLoop(() => {
     updateControllers();
     updateTeleport();
-    updateTaskPanel(renderer, camera);
+    updateTaskPanel(camera);
     renderer.render(scene, camera);
   });
 }

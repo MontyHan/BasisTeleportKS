@@ -339,14 +339,6 @@ export function initTaskUI(scene) {
   taskGroup.visible = false;
   scene.add(taskGroup);
 
-  // Hintergrund
-  const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.08, 1.72),
-    new THREE.MeshBasicMaterial({ color: 0x06061a, transparent: true, opacity: 0.90, side: THREE.DoubleSide })
-  );
-  bg.position.set(0, 0, -0.015);
-  taskGroup.add(bg);
-
   // Version-Buttons (oben)
   _makeBtn('Version A', -0.24, 0.78, () => { currentVersion = 'A'; currentTask = 0; currentPage = 0; _refresh(); });
   _makeBtn('Version B',  0.24, 0.78, () => { currentVersion = 'B'; currentTask = 0; currentPage = 0; _refresh(); });
@@ -382,11 +374,10 @@ export function toggleTaskPanel() {
 export function isTaskPanelVisible() { return taskPanelVisible; }
 export function getTaskPanelButtons() { return taskPanelButtons; }
 
-export function updateTaskPanel(renderer, fallbackCamera) {
+export function updateTaskPanel(camera) {
   if (!taskGroup || !taskPanelVisible) return;
-  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : fallbackCamera;
   const camPos = new THREE.Vector3();
-  cam.getWorldPosition(camPos);
+  camera.getWorldPosition(camPos);
   taskGroup.lookAt(camPos);
 }
 
