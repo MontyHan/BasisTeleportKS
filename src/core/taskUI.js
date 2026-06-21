@@ -382,10 +382,11 @@ export function toggleTaskPanel() {
 export function isTaskPanelVisible() { return taskPanelVisible; }
 export function getTaskPanelButtons() { return taskPanelButtons; }
 
-export function updateTaskPanel(camera) {
+export function updateTaskPanel(renderer, fallbackCamera) {
   if (!taskGroup || !taskPanelVisible) return;
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : fallbackCamera;
   const camPos = new THREE.Vector3();
-  camera.getWorldPosition(camPos);
+  cam.getWorldPosition(camPos);
   taskGroup.lookAt(camPos);
 }
 
