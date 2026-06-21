@@ -136,7 +136,7 @@ function init() {
       appMode = 'select-param-gerade';
       allGeraden.forEach(g => { g.marker.visible = true; });
       const lam = getLambdaValue();
-      setPanelStatus(`λ=${lam}: Gerade wählen`, '#88ffff');
+      setPanelStatus(`λ=${lam.toFixed(1)}: Gerade wählen`, '#88ffff');
     },
 
     onLaengeMode: () => {
@@ -285,6 +285,8 @@ function enterLaengeMode() {
   const total = allPointMeshes.length + allVektoren.length + allGeraden.length;
   if (total === 0) { setPanelStatus('Keine Vektoren!', '#ff4444'); return; }
 
+  // Gelbe Kugel in der MITTE des jeweiligen Vektors (OV oder RV),
+  // nicht an der Spitze – so ist klar welcher Vektor gemeint ist
   for (const pd of allPointMeshes) {
     const c = pd.mathCoords;
     const len = Math.sqrt(c.x**2 + c.y**2 + c.z**2);
@@ -292,7 +294,7 @@ function enterLaengeMode() {
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
     );
-    marker.position.set(c.y, c.z, c.x);
+    marker.position.set(c.y / 2, c.z / 2, c.x / 2);
     scene.add(marker);
     laengeMarkers.push({ mesh: marker, lengthValue: len });
   }
@@ -305,7 +307,11 @@ function enterLaengeMode() {
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
     );
-    marker.position.set(v.p2Math.y, v.p2Math.z, v.p2Math.x);
+    marker.position.set(
+      (v.p1Math.y + v.p2Math.y) / 2,
+      (v.p1Math.z + v.p2Math.z) / 2,
+      (v.p1Math.x + v.p2Math.x) / 2
+    );
     scene.add(marker);
     laengeMarkers.push({ mesh: marker, lengthValue: len });
   }
@@ -317,13 +323,17 @@ function enterLaengeMode() {
       new THREE.SphereGeometry(0.07, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
     );
-    marker.position.set(g.p2Math.y, g.p2Math.z, g.p2Math.x);
+    marker.position.set(
+      (g.p1Math.y + g.p2Math.y) / 2,
+      (g.p1Math.z + g.p2Math.z) / 2,
+      (g.p1Math.x + g.p2Math.x) / 2
+    );
     scene.add(marker);
     laengeMarkers.push({ mesh: marker, lengthValue: len });
   }
 
   appMode = 'select-vector-length';
-  setPanelStatus('Vektorspitze waehlen', '#ffff00');
+  setPanelStatus('Vektormitte antippen', '#ffff00');
 }
 
 function clearLaengeMarkers() {

@@ -225,7 +225,7 @@ function createPanel() {
   });
 
   // ---- BERECHNEN: WINKEL + SCHNITT ----
-  makeRowLabel('BERECHNEN', -0.38, -2.65);
+  makeRowLabel('BERECHNEN', -0.52, -2.65);
   addMedium('WINKEL', -0.12, -2.65, () => {
     cancelDeleteAll();
     if (onWinkelMode) onWinkelMode();
@@ -387,8 +387,8 @@ function createRow(parent, axis, y) {
   parent.add(text);
   textSprites[axis] = text;
 
-  const minus = makeSmallButton('-', 0.2,  y, () => { values[axis] -= 1; updateText(); });
-  const plus  = makeSmallButton('+', 0.45, y, () => { values[axis] += 1; updateText(); });
+  const minus = makeSmallButton('-', 0.05, y, () => { values[axis] -= 1; updateText(); });
+  const plus  = makeSmallButton('+', 0.28, y, () => { values[axis] += 1; updateText(); });
   parent.add(plus, minus);
   buttons.push(plus, minus);
 }
@@ -410,14 +410,19 @@ function updateText() {
 // ===== λ-Eingabe Reihe =====
 
 function createLambdaRow(parent, y) {
-  lambdaSprite = makeTextSprite('λ: 0');
+  lambdaSprite = makeTextSprite('λ: 0.0');
   lambdaSprite.position.set(-0.5, y, 0);
   lambdaSprite.scale.set(0.4, 0.27, 1);
   parent.add(lambdaSprite);
 
-  // Minus/Plus etwas nach links gerückt, damit λ bestätigen Platz hat
-  const minus = makeSmallButton('-', -0.1, y, () => { lambdaValue -= 1; updateLambdaSprite(); });
-  const plus  = makeSmallButton('+', 0.12, y, () => { lambdaValue += 1; updateLambdaSprite(); });
+  const minus = makeSmallButton('-', -0.1, y, () => {
+    lambdaValue = Math.round((lambdaValue - 0.1) * 10) / 10;
+    updateLambdaSprite();
+  });
+  const plus  = makeSmallButton('+', 0.12, y, () => {
+    lambdaValue = Math.round((lambdaValue + 0.1) * 10) / 10;
+    updateLambdaSprite();
+  });
   parent.add(minus, plus);
   buttons.push(minus, plus);
 
@@ -425,7 +430,7 @@ function createLambdaRow(parent, y) {
   const confirmBtn = makeMediumButton('λ bestätigen', 0.4, y, () => {
     cancelDeleteAll();
     if (onParamMode) onParamMode();
-  }, 40);
+  }, 48);
   confirmBtn.material.color.setHex(0x225588);
   parent.add(confirmBtn);
   buttons.push(confirmBtn);
@@ -439,7 +444,7 @@ function updateLambdaSprite() {
   ctx.fillStyle = 'white';
   ctx.font = 'bold 67px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(`λ: ${lambdaValue}`, canvas.width / 2, canvas.height / 2);
+  ctx.fillText(`λ: ${lambdaValue.toFixed(1)}`, canvas.width / 2, canvas.height / 2);
   lambdaSprite.material.map.needsUpdate = true;
 }
 
